@@ -320,6 +320,16 @@ public class MainActivity extends Activity {
     }
 
     private void focusFirst(View view) {
-        if (view instanceof ViewGroupLike) return;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View child = group.getChildAt(i);
+                if (child.isFocusable()) {
+                    child.requestFocus();
+                    return;
+                }
+                focusFirst(child);
+            }
+        }
     }
 }
