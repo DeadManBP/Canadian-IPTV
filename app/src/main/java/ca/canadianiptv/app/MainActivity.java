@@ -104,7 +104,7 @@ public class MainActivity extends Activity {
         rail.setPadding(dp(16), dp(14), dp(16), dp(20));
         rail.setBackgroundColor(Color.rgb(18, 22, 29));
         root.addView(rail, new LinearLayout.LayoutParams(dp(205), -1));
-        TextView brand = text("CANADIAN\\nIPTV", 23, WHITE, true);
+        TextView brand = text("CANADIAN\nIPTV", 23, WHITE, true);
         brand.setLetterSpacing(0.06f);
         rail.addView(brand);
         TextView edition = text("YOUR TV. YOUR WAY.", 10, MUTED, true);
@@ -328,6 +328,12 @@ public class MainActivity extends Activity {
         row.addView(play, params(105, 42));
         play.setOnClickListener(v -> playDemo(name, url));
         row.setFocusable(true);
+        row.setFocusableInTouchMode(false);
+        row.setOnFocusChangeListener((v, focused) -> {
+            GradientDrawable background = round(focused ? PANEL_LIGHT : PANEL, 12);
+            if (focused) background.setStroke(dp(3), WHITE);
+            row.setBackground(background);
+        });
         row.setOnClickListener(v -> playDemo(name, url));
     }
 
@@ -411,7 +417,11 @@ public class MainActivity extends Activity {
         view.setFocusable(true);
         view.setClickable(true);
         view.setBackground(round(primary ? RED : PANEL_LIGHT, 10));
-        view.setOnFocusChangeListener((v, focused) -> v.setBackground(round(focused ? RED : (primary ? RED : PANEL_LIGHT), 10)));
+        view.setOnFocusChangeListener((v, focused) -> {
+            GradientDrawable background = round(primary ? RED : (focused ? RED : PANEL_LIGHT), 10);
+            if (focused) background.setStroke(dp(3), WHITE);
+            view.setBackground(background);
+        });
         return view;
     }
 
