@@ -7,6 +7,8 @@ import android.os.Bundle;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.BitmapFactory;
+import android.widget.ImageView;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -42,11 +44,19 @@ public class MainActivity extends Activity {
     private final String CANADA_PLAYLIST = "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8";
     private final ExecutorService playlistExecutor = Executors.newSingleThreadExecutor();
     private final Set<String> favourites = new LinkedHashSet<>();
+    private final java.util.Map<String, String> favouriteUrls = new java.util.LinkedHashMap<>();
+    private final ExecutorService imageExecutor = Executors.newFixedThreadPool(3);
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
+        android.content.SharedPreferences saved = getSharedPreferences("canadian_iptv", MODE_PRIVATE);
+        favourites.addAll(saved.getStringSet("favourites", new LinkedHashSet<>()));
+        for (String name : favourites) {
+            String url = saved.getString("url_" + name, "");
+            if (!url.isEmpty()) favouriteUrls.put(name, url);
+        }
         showHome();
     }
 
@@ -212,7 +222,7 @@ public class MainActivity extends Activity {
                             if ("canada".equalsIgnoreCase(group.trim())) {
                                 String detail = "Canada";
                                 if (!logo.isEmpty()) detail += " • Logo available";
-                                channels.add(new String[]{name, detail, line});
+                                channels.add(new String[]{name, detail, line, logo});
                             }
                             name = null;
                             group = "";
@@ -235,7 +245,7 @@ public class MainActivity extends Activity {
                     return;
                 }
                 status.setText(channels.size() + " Canadian channels found • Select a channel to play");
-                for (String[] channel : channels) addMediaRow(page, channel[0], channel[1], channel[2]);
+                for (String[] channel : channels) addMediaRow(page, channel[0], channel[1], channel[2], channel.length > 3 ? channel[3] : "");
                 if (channels.isEmpty()) status.setText("The playlist loaded, but no entries were tagged Canada.");
             });
         });
@@ -268,15 +278,13 @@ public class MainActivity extends Activity {
 
     private void showFavourites() {
         java.util.ArrayList<String[]> items = new java.util.ArrayList<>();
-        if (favourites.contains("Big Buck Bunny • Test Channel")) items.add(new String[]{"Big Buck Bunny • Test Channel", "Saved demo channel", BBB});
-        if (favourites.contains("Big Buck Bunny")) items.add(new String[]{"Big Buck Bunny", "Saved demo movie", BBB});
-        if (favourites.contains("Tears of Steel")) items.add(new String[]{"Tears of Steel", "Saved demo movie", TEARS});
-        if (favourites.contains("Unified Streaming • Live Test")) items.add(new String[]{"Unified Streaming • Live Test", "Saved live test feed", LIVE_TEST});
-        if (items.isEmpty()) {
-            showCatalog("FAVOURITES", "Your favourites", "Nothing saved yet. Use the ☆ button beside a demo item to add it here.", new String[0][0]);
-        } else {
-            showCatalog("FAVOURITES", "Your favourites", "Your saved demo items.", items.toArray(new String[0][]));
+        for (String name : favourites) {
+            String url = favouriteUrls.get(name);
+            if (url != null && !url.isEmpty()) items.add(new String[]{name, "Saved favourite", url});
         }
+        showCatalog("FAVOURITES", "Your favourites",
+            items.isEmpty() ? "Nothing saved yet. Use the star beside a channel or title to save it." : "Your saved channels and videos.",
+            items.toArray(new String[0][]));
     }
 
     private void showCatalog(String section, String heading, String subtitle, String[][] items) {
@@ -300,6 +308,10 @@ public class MainActivity extends Activity {
     }
 
     private void addMediaRow(LinearLayout page, String name, String detail, String url) {
+        addMediaRow(page, name, detail, url, "");
+    }
+
+    private void addMediaRow(LinearLayout page, String name, String detail, String url, String logoUrl) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -308,6 +320,29 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams rp = params(-1, 76);
         rp.topMargin = dp(10);
         page.addView(row, rp);
+        if (logoUrl != null && !logoUrl.isEmpty()) {
+            ImageView logo = new ImageView(this);
+            logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            logo.setBackground(round(PANEL_LIGHT, 8));
+            LinearLayout.LayoutParams logoParams = params(54, 54);
+            logoParams.rightMargin = dp(14);
+            row.addView(logo, logoParams);
+            logo.setTag(logoUrl);
+            imageExecutor.execute(() -> {
+                try {
+                    HttpURLConnection conn = (HttpURLConnection) new URL(logoUrl).openConnection();
+                    conn.setConnectTimeout(8000);
+                    conn.setReadTimeout(10000);
+                    android.graphics.Bitmap bitmap;
+                    try (java.io.InputStream stream = conn.getInputStream()) {
+                        bitmap = BitmapFactory.decodeStream(stream);
+                    } finally { conn.disconnect(); }
+                    if (bitmap != null) runOnUiThread(() -> {
+                        if (logoUrl.equals(logo.getTag())) logo.setImageBitmap(bitmap);
+                    });
+                } catch (Exception ignored) { }
+            });
+        }
         LinearLayout info = new LinearLayout(this);
         info.setOrientation(LinearLayout.VERTICAL);
         row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
@@ -321,7 +356,17 @@ public class MainActivity extends Activity {
         fp.rightMargin = dp(8);
         row.addView(fav, fp);
         fav.setOnClickListener(v -> {
-            if (favourites.contains(name)) favourites.remove(name); else favourites.add(name);
+            if (favourites.contains(name)) {
+                favourites.remove(name);
+                favouriteUrls.remove(name);
+            } else {
+                favourites.add(name);
+                favouriteUrls.put(name, url);
+            }
+            getSharedPreferences("canadian_iptv", MODE_PRIVATE).edit()
+                .putStringSet("favourites", new LinkedHashSet<>(favourites))
+                .putString("url_" + name, favourites.contains(name) ? url : "")
+                .apply();
             fav.setText(favourites.contains(name) ? "★" : "☆");
         });
         TextView play = actionCard("▶  PLAY", true);
