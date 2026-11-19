@@ -240,7 +240,7 @@ public class MainActivity extends Activity {
     }
 
     private String m3uAttribute(String line, String key) {
-        String marker = key + "=\\\"";
+        String marker = key + "=\"";
         int start = line.indexOf(marker);
         if (start < 0) return "";
         start += marker.length();
