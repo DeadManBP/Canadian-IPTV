@@ -227,7 +227,7 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 if (page.getParent() == null) return;
                 int first = page.indexOfChild(status);
-                while (page.getChildCount() > first + 1) page.removeViewAt(first + 1);
+                while (page.getChildCount() > first + 3) page.removeViewAt(first + 3);
                 if (problem != null) {
                     status.setText("Could not load playlist: " + problem + ". Check the TV's internet connection and try reload.");
                     return;
