@@ -53,7 +53,7 @@ public class MainActivity extends Activity {
 
         View divider = new View(this);
         divider.setBackgroundColor(PANEL_LIGHT);
-        LinearLayout.LayoutParams divp = params(-1, dp(1));
+        LinearLayout.LayoutParams divp = params(-1, 1);
         divp.topMargin = dp(28);
         divp.bottomMargin = dp(22);
         rail.addView(divider, divp);
@@ -126,7 +126,7 @@ public class MainActivity extends Activity {
         hero.addView(heroBody, hbp);
 
         TextView add = actionCard("＋   ADD PLAYLIST", true);
-        LinearLayout.LayoutParams ap = params(dp(220), dp(48));
+        LinearLayout.LayoutParams ap = params(220, 48);
         ap.topMargin = dp(17);
         hero.addView(add, ap);
         add.setOnClickListener(v -> showAddPlaylist());
