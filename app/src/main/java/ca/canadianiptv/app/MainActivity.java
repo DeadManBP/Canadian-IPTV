@@ -18,6 +18,14 @@ import android.widget.TextView;
 import android.widget.VideoView;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.ArrayList;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 
 public class MainActivity extends Activity {
     private final int BG = Color.rgb(13, 16, 22);
@@ -29,6 +37,8 @@ public class MainActivity extends Activity {
     private final String BBB = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8";
     private final String TEARS = "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8";
     private final String LIVE_TEST = "https://demo.unified-streaming.com/k8s/live/stable/live.isml/.m3u8";
+    private final String CANADA_PLAYLIST = "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8";
+    private final ExecutorService playlistExecutor = Executors.newSingleThreadExecutor();
     private final Set<String> favourites = new LinkedHashSet<>();
 
     @Override public void onCreate(Bundle savedInstanceState) {
@@ -41,14 +51,14 @@ public class MainActivity extends Activity {
     private void showHome() {
         LinearLayout root = createRoot("HOME");
         LinearLayout page = pageContent(root);
-        addPageHeader(page, "HOME", "Welcome to Canadian IPTV", "Your channels and entertainment, all in one place.");
+        addPageHeader(page, "HOME", "Welcome to Canadian IPTV", "Free Canadian channels, plus movies and series.");
         LinearLayout stats = new LinearLayout(this);
         stats.setOrientation(LinearLayout.HORIZONTAL);
         LinearLayout.LayoutParams sp = params(-1, 92);
         sp.topMargin = dp(18);
         page.addView(stats, sp);
-        addStat(stats, "PLAYLISTS", "1", "Built-in demo library");
-        addStat(stats, "CHANNELS", "2", "Demo streams ready");
+        addStat(stats, "PLAYLISTS", "1", "Free Canadian playlist");
+        addStat(stats, "CHANNELS", "CAN", "Canadian channels");
         addStat(stats, "CONNECTION", "DEMO", "No login required");
 
         LinearLayout hero = new LinearLayout(this);
@@ -59,23 +69,23 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams hp = params(-1, -2);
         hp.topMargin = dp(16);
         page.addView(hero, hp);
-        TextView eyebrow = text("DEMO MODE ENABLED", 11, RED, true);
+        TextView eyebrow = text("FREE CANADIAN TV", 11, RED, true);
         eyebrow.setLetterSpacing(0.14f);
         hero.addView(eyebrow);
-        TextView title = text("Explore Canadian IPTV", 24, WHITE, true);
+        TextView title = text("Your Canadian channels", 24, WHITE, true);
         LinearLayout.LayoutParams tp = params(-1, -2);
         tp.topMargin = dp(6);
         hero.addView(title, tp);
-        TextView body = text("Browse sample channels, movies and series. Try the built-in test streams without a subscription or playlist URL.", 14, MUTED, false);
+        TextView body = text("Browse free Canadian streams from a community-maintained playlist. Demo streams remain available for playback testing.", 14, MUTED, false);
         LinearLayout.LayoutParams bp = params(-1, -2);
         bp.topMargin = dp(5);
         hero.addView(body, bp);
-        TextView live = actionCard("▶   OPEN DEMO LIVE TV", true);
+        TextView live = actionCard("▶   OPEN CANADIAN LIVE TV", true);
         LinearLayout.LayoutParams lp = params(250, 44);
         lp.topMargin = dp(12);
         hero.addView(live, lp);
         live.setOnClickListener(v -> showLiveTv());
-        TextView note = text("Demo streams are public playback samples, not real Canadian broadcast channels.", 12, MUTED, false);
+        TextView note = text("Free streams can change, go offline or be restricted by location.", 12, MUTED, false);
         LinearLayout.LayoutParams np = params(-1, -2);
         np.topMargin = dp(12);
         page.addView(note, np);
@@ -112,7 +122,7 @@ public class MainActivity extends Activity {
         addRailItem(rail, "★   FAVOURITES", selected.equals("FAVOURITES"), this::showFavourites);
         View spacer = new View(this);
         rail.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1));
-        rail.addView(text("DEMO MODE  •  0.2 PREVIEW", 9, MUTED, true));
+        rail.addView(text("FREE TV  •  0.3 PREVIEW", 9, MUTED, true));
         return root;
     }
 
@@ -142,11 +152,100 @@ public class MainActivity extends Activity {
     }
 
     private void showLiveTv() {
-        showCatalog("LIVE TV", "Demo channels", "These public test feeds let us check playback. They are not broadcast TV channels.",
+        LinearLayout root = createRoot("LIVE TV");
+        LinearLayout page = pageContent(root);
+        addPageHeader(page, "LIVE TV", "Free Canadian channels", "Official free streams listed by the Free-TV project. Some channels may be geo-blocked or temporarily offline.");
+        TextView status = text("Loading Canadian channel list…", 14, MUTED, false);
+        LinearLayout.LayoutParams statusParams = params(-1, -2);
+        statusParams.topMargin = dp(16);
+        page.addView(status, statusParams);
+        TextView reload = actionCard("↻  RELOAD CHANNELS", true);
+        LinearLayout.LayoutParams reloadParams = params(220, 42);
+        reloadParams.topMargin = dp(10);
+        page.addView(reload, reloadParams);
+        reload.setOnClickListener(v -> loadCanadianChannels(page, status));
+        TextView demo = actionCard("▶  OPEN DEMO STREAMS", false);
+        LinearLayout.LayoutParams demoParams = params(220, 42);
+        demoParams.topMargin = dp(8);
+        page.addView(demo, demoParams);
+        demo.setOnClickListener(v -> showDemoLiveTv());
+        setContentView(root);
+        focusFirst(root);
+        loadCanadianChannels(page, status);
+    }
+
+    private void showDemoLiveTv() {
+        showCatalog("LIVE TV", "Demo channels", "Public playback samples used as a fallback. These are not broadcast TV channels.",
             new String[][] {
                 {"Big Buck Bunny • Test Channel", "HLS playback sample • On demand", BBB},
                 {"Unified Streaming • Live Test", "Live test signal • Availability may vary", LIVE_TEST}
             });
+    }
+
+    private void loadCanadianChannels(LinearLayout page, TextView status) {
+        status.setText("Loading Canadian channel list…");
+        playlistExecutor.execute(() -> {
+            ArrayList<String[]> channels = new ArrayList<>();
+            String error = null;
+            HttpURLConnection connection = null;
+            try {
+                connection = (HttpURLConnection) new URL(CANADA_PLAYLIST).openConnection();
+                connection.setConnectTimeout(15000);
+                connection.setReadTimeout(20000);
+                connection.setRequestProperty("User-Agent", "CanadianIPTV/0.3 AndroidTV");
+                connection.setInstanceFollowRedirects(true);
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), "UTF-8"))) {
+                    String line;
+                    String name = null;
+                    String group = "";
+                    String logo = "";
+                    while ((line = reader.readLine()) != null) {
+                        line = line.trim();
+                        if (line.startsWith("#EXTINF")) {
+                            int comma = line.lastIndexOf(',');
+                            name = comma >= 0 ? line.substring(comma + 1).trim() : "Unnamed channel";
+                            group = m3uAttribute(line, "group-title");
+                            logo = m3uAttribute(line, "tvg-logo");
+                        } else if (!line.isEmpty() && !line.startsWith("#") && name != null) {
+                            if ("canada".equalsIgnoreCase(group.trim())) {
+                                String detail = "Canada";
+                                if (!logo.isEmpty()) detail += " • Logo available";
+                                channels.add(new String[]{name, detail, line});
+                            }
+                            name = null;
+                            group = "";
+                            logo = "";
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                error = e.getMessage() == null ? "Network error" : e.getMessage();
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+            final String problem = error;
+            runOnUiThread(() -> {
+                if (page.getParent() == null) return;
+                int first = page.indexOfChild(status);
+                while (page.getChildCount() > first + 1) page.removeViewAt(first + 1);
+                if (problem != null) {
+                    status.setText("Could not load playlist: " + problem + ". Check the TV's internet connection and try reload.");
+                    return;
+                }
+                status.setText(channels.size() + " Canadian channels found • Select a channel to play");
+                for (String[] channel : channels) addMediaRow(page, channel[0], channel[1], channel[2]);
+                if (channels.isEmpty()) status.setText("The playlist loaded, but no entries were tagged Canada.");
+            });
+        });
+    }
+
+    private String m3uAttribute(String line, String key) {
+        String marker = key + "=\\\"";
+        int start = line.indexOf(marker);
+        if (start < 0) return "";
+        start += marker.length();
+        int end = line.indexOf('"', start);
+        return end < 0 ? "" : line.substring(start, end);
     }
 
     private void showMovies() {
