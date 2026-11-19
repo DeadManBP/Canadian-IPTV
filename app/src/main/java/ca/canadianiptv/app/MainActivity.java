@@ -39,7 +39,7 @@ public class MainActivity extends Activity {
 
         LinearLayout rail = new LinearLayout(this);
         rail.setOrientation(LinearLayout.VERTICAL);
-        rail.setPadding(dp(18), dp(24), dp(18), dp(20));
+        rail.setPadding(dp(16), dp(16), dp(16), dp(14));
         rail.setBackgroundColor(Color.rgb(18, 22, 29));
         root.addView(rail, new LinearLayout.LayoutParams(dp(205), -1));
 
@@ -54,8 +54,8 @@ public class MainActivity extends Activity {
         View divider = new View(this);
         divider.setBackgroundColor(PANEL_LIGHT);
         LinearLayout.LayoutParams divp = params(-1, 1);
-        divp.topMargin = dp(28);
-        divp.bottomMargin = dp(22);
+        divp.topMargin = dp(18);
+        divp.bottomMargin = dp(14);
         rail.addView(divider, divp);
 
         addRailItem(rail, "⌂   HOME", true, () -> showHome());
@@ -76,27 +76,27 @@ public class MainActivity extends Activity {
 
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(34), dp(28), dp(34), dp(28));
+        content.setPadding(dp(28), dp(16), dp(28), dp(16));
         scroll.addView(content);
 
         TextView top = text("HOME", 13, MUTED, true);
         top.setLetterSpacing(0.16f);
         content.addView(top);
 
-        TextView heading = text("Welcome to Canadian IPTV", 30, WHITE, true);
+        TextView heading = text("Welcome to Canadian IPTV", 26, WHITE, true);
         LinearLayout.LayoutParams hp = params(-1, -2);
-        hp.topMargin = dp(12);
+        hp.topMargin = dp(8);
         content.addView(heading, hp);
 
         TextView intro = text("Your channels and entertainment, all in one place.", 16, MUTED, false);
         LinearLayout.LayoutParams ip = params(-1, -2);
-        ip.topMargin = dp(7);
+        ip.topMargin = dp(5);
         content.addView(intro, ip);
 
         LinearLayout stats = new LinearLayout(this);
         stats.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams sp = params(-1, dp(112));
-        sp.topMargin = dp(28);
+        LinearLayout.LayoutParams sp = params(-1, dp(92));
+        sp.topMargin = dp(18);
         content.addView(stats, sp);
         addStat(stats, "PLAYLISTS", "0", "Add a source to begin");
         addStat(stats, "CHANNELS", "0", "Waiting for playlist");
@@ -105,10 +105,10 @@ public class MainActivity extends Activity {
         LinearLayout hero = new LinearLayout(this);
         hero.setOrientation(LinearLayout.VERTICAL);
         hero.setGravity(Gravity.CENTER_VERTICAL);
-        hero.setPadding(dp(26), dp(22), dp(26), dp(22));
+        hero.setPadding(dp(22), dp(16), dp(22), dp(16));
         hero.setBackground(round(PANEL, 18));
-        LinearLayout.LayoutParams bp = params(-1, dp(205));
-        bp.topMargin = dp(25);
+        LinearLayout.LayoutParams bp = params(-1, -2);
+        bp.topMargin = dp(16);
         content.addView(hero, bp);
 
         TextView eyebrow = text("GET STARTED", 11, RED, true);
@@ -117,23 +117,23 @@ public class MainActivity extends Activity {
 
         TextView heroTitle = text("Bring your TV lineup with you.", 24, WHITE, true);
         LinearLayout.LayoutParams htp = params(-1, -2);
-        htp.topMargin = dp(9);
+        htp.topMargin = dp(6);
         hero.addView(heroTitle, htp);
 
         TextView heroBody = text("Connect a supported M3U playlist or Xtream Codes account. Your provider supplies the playlist and access details.", 14, MUTED, false);
         LinearLayout.LayoutParams hbp = params(-1, -2);
-        hbp.topMargin = dp(7);
+        hbp.topMargin = dp(5);
         hero.addView(heroBody, hbp);
 
         TextView add = actionCard("＋   ADD PLAYLIST", true);
-        LinearLayout.LayoutParams ap = params(220, 48);
-        ap.topMargin = dp(17);
+        LinearLayout.LayoutParams ap = params(220, 44);
+        ap.topMargin = dp(12);
         hero.addView(add, ap);
         add.setOnClickListener(v -> showAddPlaylist());
 
         TextView note = text("No playlist connected yet. Add one to populate your library.", 13, MUTED, false);
         LinearLayout.LayoutParams np = params(-1, -2);
-        np.topMargin = dp(20);
+        np.topMargin = dp(12);
         content.addView(note, np);
 
         setContentView(root);
@@ -144,8 +144,8 @@ public class MainActivity extends Activity {
         TextView item = actionCard(label, selected);
         item.setTextSize(13);
         item.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams p = params(-1, dp(46));
-        p.bottomMargin = dp(7);
+        LinearLayout.LayoutParams p = params(-1, dp(40));
+        p.bottomMargin = dp(5);
         rail.addView(item, p);
         item.setOnClickListener(v -> action.run());
     }
