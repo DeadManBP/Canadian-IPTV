@@ -39,7 +39,7 @@ public class MainActivity extends Activity {
 
         LinearLayout rail = new LinearLayout(this);
         rail.setOrientation(LinearLayout.VERTICAL);
-        rail.setPadding(dp(16), dp(16), dp(16), dp(14));
+        rail.setPadding(dp(16), dp(14), dp(16), dp(20));
         rail.setBackgroundColor(Color.rgb(18, 22, 29));
         root.addView(rail, new LinearLayout.LayoutParams(dp(205), -1));
 
@@ -144,8 +144,8 @@ public class MainActivity extends Activity {
         TextView item = actionCard(label, selected);
         item.setTextSize(13);
         item.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams p = params(-1, dp(40));
-        p.bottomMargin = dp(5);
+        LinearLayout.LayoutParams p = params(-1, dp(36));
+        p.bottomMargin = dp(4);
         rail.addView(item, p);
         item.setOnClickListener(v -> action.run());
     }
