@@ -2,18 +2,21 @@ package ca.canadianiptv.app;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.net.Uri;
 import android.os.Bundle;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
-import android.view.View;
-import android.widget.Button;
-import android.widget.EditText;
+import android.view.View;\nimport android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.MediaController;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
+import android.widget.VideoView;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 public class MainActivity extends Activity {
     private final int BG = Color.rgb(13, 16, 22);
@@ -22,10 +25,12 @@ public class MainActivity extends Activity {
     private final int RED = Color.rgb(220, 48, 58);
     private final int WHITE = Color.rgb(245, 247, 250);
     private final int MUTED = Color.rgb(157, 167, 181);
-    private LinearLayout content;
+    private final String BBB = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8";
+    private final String TEARS = "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8";
+    private final String LIVE_TEST = "https://demo.unified-streaming.com/k8s/live/stable/live.isml/.m3u8";
+    private final Set<String> favourites = new LinkedHashSet<>();
 
-    @Override
-    public void onCreate(Bundle savedInstanceState) {
+    @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
@@ -33,118 +38,223 @@ public class MainActivity extends Activity {
     }
 
     private void showHome() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.HORIZONTAL);
-        root.setBackgroundColor(BG);
-
-        LinearLayout rail = new LinearLayout(this);
-        rail.setOrientation(LinearLayout.VERTICAL);
-        rail.setPadding(dp(16), dp(14), dp(16), dp(20));
-        rail.setBackgroundColor(Color.rgb(18, 22, 29));
-        root.addView(rail, new LinearLayout.LayoutParams(dp(205), -1));
-
-        TextView brand = text("CANADIAN\nIPTV", 23, WHITE, true);
-        brand.setLetterSpacing(0.06f);
-        rail.addView(brand);
-        TextView edition = text("YOUR TV. YOUR WAY.", 10, MUTED, true);
-        LinearLayout.LayoutParams ep = params(-2, -2);
-        ep.topMargin = dp(8);
-        rail.addView(edition, ep);
-
-        View divider = new View(this);
-        divider.setBackgroundColor(PANEL_LIGHT);
-        LinearLayout.LayoutParams divp = params(-1, 1);
-        divp.topMargin = dp(18);
-        divp.bottomMargin = dp(14);
-        rail.addView(divider, divp);
-
-        addRailItem(rail, "⌂   HOME", true, () -> showHome());
-        addRailItem(rail, "▣   LIVE TV", false, () -> comingSoon("Live TV"));
-        addRailItem(rail, "▤   MOVIES", false, () -> comingSoon("Movies"));
-        addRailItem(rail, "▥   SERIES", false, () -> comingSoon("Series"));
-        addRailItem(rail, "★   FAVOURITES", false, () -> comingSoon("Favourites"));
-
-        View spacer = new View(this);
-        rail.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1));
-
-        TextView version = text("VERSION 0.1  •  PREVIEW", 10, MUTED, true);
-        rail.addView(version);
-
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        root.addView(scroll, new LinearLayout.LayoutParams(0, -1, 1));
-
-        content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(28), dp(16), dp(28), dp(16));
-        scroll.addView(content);
-
-        TextView top = text("HOME", 13, MUTED, true);
-        top.setLetterSpacing(0.16f);
-        content.addView(top);
-
-        TextView heading = text("Welcome to Canadian IPTV", 26, WHITE, true);
-        LinearLayout.LayoutParams hp = params(-1, -2);
-        hp.topMargin = dp(8);
-        content.addView(heading, hp);
-
-        TextView intro = text("Your channels and entertainment, all in one place.", 16, MUTED, false);
-        LinearLayout.LayoutParams ip = params(-1, -2);
-        ip.topMargin = dp(5);
-        content.addView(intro, ip);
-
+        LinearLayout root = createRoot("HOME");
+        LinearLayout page = pageContent(root);
+        addPageHeader(page, "HOME", "Welcome to Canadian IPTV", "Your channels and entertainment, all in one place.");
         LinearLayout stats = new LinearLayout(this);
         stats.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams sp = params(-1, dp(92));
+        LinearLayout.LayoutParams sp = params(-1, 92);
         sp.topMargin = dp(18);
-        content.addView(stats, sp);
-        addStat(stats, "PLAYLISTS", "0", "Add a source to begin");
-        addStat(stats, "CHANNELS", "0", "Waiting for playlist");
-        addStat(stats, "CONNECTION", "READY", "App is ready");
+        page.addView(stats, sp);
+        addStat(stats, "PLAYLISTS", "1", "Built-in demo library");
+        addStat(stats, "CHANNELS", "2", "Demo streams ready");
+        addStat(stats, "CONNECTION", "DEMO", "No login required");
 
         LinearLayout hero = new LinearLayout(this);
         hero.setOrientation(LinearLayout.VERTICAL);
         hero.setGravity(Gravity.CENTER_VERTICAL);
         hero.setPadding(dp(22), dp(16), dp(22), dp(16));
         hero.setBackground(round(PANEL, 18));
-        LinearLayout.LayoutParams bp = params(-1, -2);
-        bp.topMargin = dp(16);
-        content.addView(hero, bp);
-
-        TextView eyebrow = text("GET STARTED", 11, RED, true);
+        LinearLayout.LayoutParams hp = params(-1, -2);
+        hp.topMargin = dp(16);
+        page.addView(hero, hp);
+        TextView eyebrow = text("DEMO MODE ENABLED", 11, RED, true);
         eyebrow.setLetterSpacing(0.14f);
         hero.addView(eyebrow);
-
-        TextView heroTitle = text("Bring your TV lineup with you.", 24, WHITE, true);
-        LinearLayout.LayoutParams htp = params(-1, -2);
-        htp.topMargin = dp(6);
-        hero.addView(heroTitle, htp);
-
-        TextView heroBody = text("Connect a supported M3U playlist or Xtream Codes account. Your provider supplies the playlist and access details.", 14, MUTED, false);
-        LinearLayout.LayoutParams hbp = params(-1, -2);
-        hbp.topMargin = dp(5);
-        hero.addView(heroBody, hbp);
-
-        TextView add = actionCard("＋   ADD PLAYLIST", true);
-        LinearLayout.LayoutParams ap = params(220, 44);
-        ap.topMargin = dp(12);
-        hero.addView(add, ap);
-        add.setOnClickListener(v -> showAddPlaylist());
-
-        TextView note = text("No playlist connected yet. Add one to populate your library.", 13, MUTED, false);
+        TextView title = text("Explore Canadian IPTV", 24, WHITE, true);
+        LinearLayout.LayoutParams tp = params(-1, -2);
+        tp.topMargin = dp(6);
+        hero.addView(title, tp);
+        TextView body = text("Browse sample channels, movies and series. Try the built-in test streams without a subscription or playlist URL.", 14, MUTED, false);
+        LinearLayout.LayoutParams bp = params(-1, -2);
+        bp.topMargin = dp(5);
+        hero.addView(body, bp);
+        TextView live = actionCard("▶   OPEN DEMO LIVE TV", true);
+        LinearLayout.LayoutParams lp = params(250, 44);
+        lp.topMargin = dp(12);
+        hero.addView(live, lp);
+        live.setOnClickListener(v -> showLiveTv());
+        TextView note = text("Demo streams are public playback samples, not real Canadian broadcast channels.", 12, MUTED, false);
         LinearLayout.LayoutParams np = params(-1, -2);
         np.topMargin = dp(12);
-        content.addView(note, np);
-
+        page.addView(note, np);
         setContentView(root);
-        add.requestFocus();
+        focusFirst(root);
+    }
+
+    private LinearLayout createRoot(String selected) {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.HORIZONTAL);
+        root.setBackgroundColor(BG);
+        LinearLayout rail = new LinearLayout(this);
+        rail.setOrientation(LinearLayout.VERTICAL);
+        rail.setPadding(dp(16), dp(14), dp(16), dp(20));
+        rail.setBackgroundColor(Color.rgb(18, 22, 29));
+        root.addView(rail, new LinearLayout.LayoutParams(dp(205), -1));
+        TextView brand = text("CANADIAN\\nIPTV", 23, WHITE, true);
+        brand.setLetterSpacing(0.06f);
+        rail.addView(brand);
+        TextView edition = text("YOUR TV. YOUR WAY.", 10, MUTED, true);
+        LinearLayout.LayoutParams ep = params(-2, -2);
+        ep.topMargin = dp(8);
+        rail.addView(edition, ep);
+        View divider = new View(this);
+        divider.setBackgroundColor(PANEL_LIGHT);
+        LinearLayout.LayoutParams divp = params(-1, 1);
+        divp.topMargin = dp(18);
+        divp.bottomMargin = dp(14);
+        rail.addView(divider, divp);
+        addRailItem(rail, "⌂   HOME", selected.equals("HOME"), this::showHome);
+        addRailItem(rail, "▣   LIVE TV", selected.equals("LIVE TV"), this::showLiveTv);
+        addRailItem(rail, "▤   MOVIES", selected.equals("MOVIES"), this::showMovies);
+        addRailItem(rail, "▥   SERIES", selected.equals("SERIES"), this::showSeries);
+        addRailItem(rail, "★   FAVOURITES", selected.equals("FAVOURITES"), this::showFavourites);
+        View spacer = new View(this);
+        rail.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1));
+        rail.addView(text("DEMO MODE  •  0.2 PREVIEW", 9, MUTED, true));
+        return root;
+    }
+
+    private LinearLayout pageContent(LinearLayout root) {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        root.addView(scroll, new LinearLayout.LayoutParams(0, -1, 1));
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(28), dp(16), dp(28), dp(16));
+        scroll.addView(page);
+        return page;
+    }
+
+    private void addPageHeader(LinearLayout page, String section, String heading, String subtitle) {
+        TextView top = text(section, 13, MUTED, true);
+        top.setLetterSpacing(0.16f);
+        page.addView(top);
+        TextView title = text(heading, 26, WHITE, true);
+        LinearLayout.LayoutParams tp = params(-1, -2);
+        tp.topMargin = dp(8);
+        page.addView(title, tp);
+        TextView sub = text(subtitle, 15, MUTED, false);
+        LinearLayout.LayoutParams sp = params(-1, -2);
+        sp.topMargin = dp(5);
+        page.addView(sub, sp);
+    }
+
+    private void showLiveTv() {
+        showCatalog("LIVE TV", "Demo channels", "These public test feeds let us check playback. They are not broadcast TV channels.",
+            new String[][] {
+                {"Big Buck Bunny • Test Channel", "HLS playback sample • On demand", BBB},
+                {"Unified Streaming • Live Test", "Live test signal • Availability may vary", LIVE_TEST}
+            });
+    }
+
+    private void showMovies() {
+        showCatalog("MOVIES", "Demo movie library", "Open sample videos published for player testing.",
+            new String[][] {
+                {"Big Buck Bunny", "Open movie playback sample", BBB},
+                {"Tears of Steel", "Open movie playback sample", TEARS}
+            });
+    }
+
+    private void showSeries() {
+        showCatalog("SERIES", "Demo series", "Sample entries to test browsing. These are not a real TV catalogue.",
+            new String[][] {
+                {"Demo Series • Episode 1", "Playback sample • Big Buck Bunny", BBB},
+                {"Demo Series • Episode 2", "Playback sample • Tears of Steel", TEARS}
+            });
+    }
+
+    private void showFavourites() {
+        java.util.ArrayList<String[]> items = new java.util.ArrayList<>();
+        if (favourites.contains("Big Buck Bunny • Test Channel")) items.add(new String[]{"Big Buck Bunny • Test Channel", "Saved demo channel", BBB});
+        if (favourites.contains("Big Buck Bunny")) items.add(new String[]{"Big Buck Bunny", "Saved demo movie", BBB});
+        if (favourites.contains("Tears of Steel")) items.add(new String[]{"Tears of Steel", "Saved demo movie", TEARS});
+        if (favourites.contains("Unified Streaming • Live Test")) items.add(new String[]{"Unified Streaming • Live Test", "Saved live test feed", LIVE_TEST});
+        if (items.isEmpty()) {
+            showCatalog("FAVOURITES", "Your favourites", "Nothing saved yet. Use the ☆ button beside a demo item to add it here.", new String[0][0]);
+        } else {
+            showCatalog("FAVOURITES", "Your favourites", "Your saved demo items.", items.toArray(new String[0][]));
+        }
+    }
+
+    private void showCatalog(String section, String heading, String subtitle, String[][] items) {
+        LinearLayout root = createRoot(section);
+        LinearLayout page = pageContent(root);
+        addPageHeader(page, section, heading, subtitle);
+        TextView badge = text("DEMO CONTENT", 11, RED, true);
+        badge.setLetterSpacing(0.12f);
+        LinearLayout.LayoutParams badgeParams = params(-1, -2);
+        badgeParams.topMargin = dp(16);
+        page.addView(badge, badgeParams);
+        if (items.length == 0) {
+            TextView empty = text("No favourites yet.", 18, MUTED, true);
+            LinearLayout.LayoutParams ep = params(-1, -2);
+            ep.topMargin = dp(18);
+            page.addView(empty, ep);
+        }
+        for (String[] item : items) addMediaRow(page, item[0], item[1], item[2]);
+        setContentView(root);
+        focusFirst(root);
+    }
+
+    private void addMediaRow(LinearLayout page, String name, String detail, String url) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16), dp(10), dp(12), dp(10));
+        row.setBackground(round(PANEL, 12));
+        LinearLayout.LayoutParams rp = params(-1, 76);
+        rp.topMargin = dp(10);
+        page.addView(row, rp);
+        LinearLayout info = new LinearLayout(this);
+        info.setOrientation(LinearLayout.VERTICAL);
+        row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
+        info.addView(text(name, 16, WHITE, true));
+        TextView sub = text(detail, 12, MUTED, false);
+        LinearLayout.LayoutParams subp = params(-1, -2);
+        subp.topMargin = dp(4);
+        info.addView(sub, subp);
+        TextView fav = actionCard(favourites.contains(name) ? "★" : "☆", false);
+        LinearLayout.LayoutParams fp = params(44, 42);
+        fp.rightMargin = dp(8);
+        row.addView(fav, fp);
+        fav.setOnClickListener(v -> {
+            if (favourites.contains(name)) favourites.remove(name); else favourites.add(name);
+            fav.setText(favourites.contains(name) ? "★" : "☆");
+        });
+        TextView play = actionCard("▶  PLAY", true);
+        row.addView(play, params(105, 42));
+        play.setOnClickListener(v -> playDemo(name, url));
+        row.setFocusable(true);
+        row.setOnClickListener(v -> playDemo(name, url));
+    }
+
+    private void playDemo(String title, String url) {
+        VideoView video = new VideoView(this);
+        video.setVideoURI(Uri.parse(url));
+        FrameLayout frame = new FrameLayout(this);
+        frame.setBackgroundColor(Color.BLACK);
+        frame.addView(video, new FrameLayout.LayoutParams(-1, -1));
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("DEMO  •  " + title).setView(frame)
+            .setNegativeButton("Close", (d, w) -> video.stopPlayback()).create();
+        dialog.setOnDismissListener(d -> video.stopPlayback());
+        dialog.show();
+        dialog.getWindow().setLayout(dp(900), dp(560));
+        MediaController controls = new MediaController(this);
+        controls.setAnchorView(video);
+        video.setMediaController(controls);
+        video.setOnErrorListener((mp, what, extra) -> {
+            showInfo("Playback issue", "This public test stream could not be played right now. The host may be unavailable, or this TV may not support its format.");
+            return true;
+        });
+        video.start();
     }
 
     private void addRailItem(LinearLayout rail, String label, boolean selected, Runnable action) {
         TextView item = actionCard(label, selected);
         item.setTextSize(13);
         item.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams p = params(-1, dp(36));
+        LinearLayout.LayoutParams p = params(-1, 36);
         p.bottomMargin = dp(4);
         rail.addView(item, p);
         item.setOnClickListener(v -> action.run());
@@ -176,33 +286,12 @@ public class MainActivity extends Activity {
         view.setFocusable(true);
         view.setClickable(true);
         view.setBackground(round(primary ? RED : PANEL_LIGHT, 10));
-        view.setOnFocusChangeListener((v, focused) ->
-            v.setBackground(round(focused ? RED : (primary ? RED : PANEL_LIGHT), 10)));
+        view.setOnFocusChangeListener((v, focused) -> v.setBackground(round(focused ? RED : (primary ? RED : PANEL_LIGHT), 10)));
         return view;
     }
 
-    private void showAddPlaylist() {
-        String[] choices = {"M3U / M3U8 playlist", "Xtream Codes login"};
-        new AlertDialog.Builder(this)
-            .setTitle("Add a playlist")
-            .setItems(choices, (dialog, which) -> {
-                if (which == 0) showInfo("M3U playlist", "M3U playlist setup is the next development step. You'll be able to enter your playlist URL here.");
-                else showInfo("Xtream Codes", "Xtream Codes setup is coming next. You'll enter your server address, username and password here.");
-            })
-            .setNegativeButton("Cancel", null)
-            .show();
-    }
-
-    private void comingSoon(String section) {
-        showInfo(section, section + " will appear here once a playlist is connected.");
-    }
-
     private void showInfo(String title, String message) {
-        new AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(message)
-            .setPositiveButton("Got it", null)
-            .show();
+        new AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("Got it", null).show();
     }
 
     private TextView text(String value, int size, int color, boolean bold) {
@@ -227,5 +316,9 @@ public class MainActivity extends Activity {
 
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private void focusFirst(View view) {
+        if (view instanceof ViewGroupLike) return;
     }
 }
