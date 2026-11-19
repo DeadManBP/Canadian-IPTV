@@ -12,16 +12,18 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.MediaController;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.VideoView;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.ArrayList;
-import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import androidx.media3.common.MediaItem;
+import androidx.media3.common.PlaybackException;
+import androidx.media3.common.Player;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.ui.PlayerView;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.io.BufferedReader;
@@ -330,24 +332,47 @@ public class MainActivity extends Activity {
     }
 
     private void playDemo(String title, String url) {
-        VideoView video = new VideoView(this);
-        video.setVideoURI(Uri.parse(url));
+        ExoPlayer player = new ExoPlayer.Builder(this).build();
+        PlayerView playerView = new PlayerView(this);
+        playerView.setPlayer(player);
+        playerView.setUseController(true);
+        playerView.setControllerAutoShow(true);
+        playerView.setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING);
+        playerView.setBackgroundColor(Color.BLACK);
+
         FrameLayout frame = new FrameLayout(this);
         frame.setBackgroundColor(Color.BLACK);
-        frame.addView(video, new FrameLayout.LayoutParams(-1, -1));
-        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("DEMO  •  " + title).setView(frame)
-            .setNegativeButton("Close", (d, w) -> video.stopPlayback()).create();
-        dialog.setOnDismissListener(d -> video.stopPlayback());
+        frame.addView(playerView, new FrameLayout.LayoutParams(-1, -1));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+            .setTitle("PLAYING  •  " + title)
+            .setView(frame)
+            .setNegativeButton("Close", (d, w) -> player.pause())
+            .create();
+
+        player.addListener(new Player.Listener() {
+            @Override public void onPlayerError(PlaybackException error) {
+                String message = error.getMessage();
+                if (message == null || message.trim().isEmpty()) {
+                    message = "The stream may be offline, geo-restricted, or using a format the TV cannot decode.";
+                } else {
+                    message = message + "\\n\\nThe stream may also be offline or geo-restricted.";
+                }
+                showInfo("Playback issue", message);
+            }
+        });
+
+        dialog.setOnDismissListener(d -> {
+            playerView.setPlayer(null);
+            player.release();
+        });
         dialog.show();
         dialog.getWindow().setLayout(dp(900), dp(560));
-        MediaController controls = new MediaController(this);
-        controls.setAnchorView(video);
-        video.setMediaController(controls);
-        video.setOnErrorListener((mp, what, extra) -> {
-            showInfo("Playback issue", "This public test stream could not be played right now. The host may be unavailable, or this TV may not support its format.");
-            return true;
-        });
-        video.start();
+
+        MediaItem mediaItem = MediaItem.fromUri(Uri.parse(url));
+        player.setMediaItem(mediaItem);
+        player.prepare();
+        player.play();
     }
 
     private void addRailItem(LinearLayout rail, String label, boolean selected, Runnable action) {
