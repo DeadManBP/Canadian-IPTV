@@ -320,29 +320,42 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams rp = params(-1, 76);
         rp.topMargin = dp(10);
         page.addView(row, rp);
-        if (logoUrl != null && !logoUrl.isEmpty()) {
-            ImageView logo = new ImageView(this);
-            logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            logo.setBackground(round(PANEL_LIGHT, 8));
-            LinearLayout.LayoutParams logoParams = params(54, 54);
-            logoParams.rightMargin = dp(14);
-            row.addView(logo, logoParams);
-            logo.setTag(logoUrl);
+
+        TextView logoFallback = text(channelInitials(name), 17, WHITE, true);
+        logoFallback.setGravity(Gravity.CENTER);
+        logoFallback.setBackground(round(PANEL_LIGHT, 8));
+        LinearLayout.LayoutParams logoParams = params(54, 54);
+        logoParams.rightMargin = dp(14);
+        row.addView(logoFallback, logoParams);
+
+        if (logoUrl != null && !logoUrl.trim().isEmpty()) {
+            logoFallback.setTag(logoUrl);
             imageExecutor.execute(() -> {
                 try {
                     HttpURLConnection conn = (HttpURLConnection) new URL(logoUrl).openConnection();
-                    conn.setConnectTimeout(8000);
-                    conn.setReadTimeout(10000);
+                    conn.setConnectTimeout(10000);
+                    conn.setReadTimeout(12000);
+                    conn.setRequestProperty("User-Agent", "Mozilla/5.0 CanadianIPTV/0.4");
                     android.graphics.Bitmap bitmap;
                     try (java.io.InputStream stream = conn.getInputStream()) {
                         bitmap = BitmapFactory.decodeStream(stream);
                     } finally { conn.disconnect(); }
                     if (bitmap != null) runOnUiThread(() -> {
-                        if (logoUrl.equals(logo.getTag())) logo.setImageBitmap(bitmap);
+                        if (logoUrl.equals(logoFallback.getTag())) {
+                            logoFallback.setText("");
+                            logoFallback.setBackgroundColor(Color.TRANSPARENT);
+                            logoFallback.setCompoundDrawables(null, null, null, null);
+                            logoFallback.setBackground(round(PANEL_LIGHT, 8));
+                            logoFallback.setText("");
+                            logoFallback.setCompoundDrawablePadding(0);
+                            logoFallback.setPadding(0, 0, 0, 0);
+                            logoFallback.setBackground(new android.graphics.drawable.BitmapDrawable(getResources(), bitmap));
+                        }
                     });
                 } catch (Exception ignored) { }
             });
         }
+
         LinearLayout info = new LinearLayout(this);
         info.setOrientation(LinearLayout.VERTICAL);
         row.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
@@ -351,8 +364,11 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams subp = params(-1, -2);
         subp.topMargin = dp(4);
         info.addView(sub, subp);
+
         TextView fav = actionCard(favourites.contains(name) ? "★" : "☆", false);
-        LinearLayout.LayoutParams fp = params(44, 42);
+        fav.setTextSize(23);
+        fav.setContentDescription("Add " + name + " to favourites");
+        LinearLayout.LayoutParams fp = params(52, 46);
         fp.rightMargin = dp(8);
         row.addView(fav, fp);
         fav.setOnClickListener(v -> {
@@ -369,17 +385,20 @@ public class MainActivity extends Activity {
                 .apply();
             fav.setText(favourites.contains(name) ? "★" : "☆");
         });
+
         TextView play = actionCard("▶  PLAY", true);
         row.addView(play, params(105, 42));
         play.setOnClickListener(v -> playDemo(name, url));
-        row.setFocusable(true);
-        row.setFocusableInTouchMode(false);
-        row.setOnFocusChangeListener((v, focused) -> {
-            GradientDrawable background = round(focused ? PANEL_LIGHT : PANEL, 12);
-            if (focused) background.setStroke(dp(3), WHITE);
-            row.setBackground(background);
-        });
-        row.setOnClickListener(v -> playDemo(name, url));
+        row.setFocusable(false);
+        row.setClickable(false);
+    }
+
+    private String channelInitials(String name) {
+        String clean = name.replaceAll("[^A-Za-z0-9 ]", " ").trim();
+        String[] words = clean.split("\\s+");
+        if (words.length == 0 || words[0].isEmpty()) return "TV";
+        if (words.length == 1) return words[0].substring(0, Math.min(2, words[0].length())).toUpperCase(java.util.Locale.ROOT);
+        return (words[0].substring(0, 1) + words[1].substring(0, 1)).toUpperCase(java.util.Locale.ROOT);
     }
 
     private void playDemo(String title, String url) {
