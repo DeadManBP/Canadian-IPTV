@@ -27,6 +27,7 @@ import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.ui.PlayerView;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -762,11 +763,17 @@ public class MainActivity extends Activity {
     }
 
     private void playDemo(String title, String url) {
+        // Keep hardware acceleration as the normal path, but allow Media3 to try
+        // alternate available decoders when the device's preferred codec fails.
+        if (activePlayerView != null) activePlayerView.setPlayer(null);
         if (activePlayer != null) {
             activePlayer.release();
             activePlayer = null;
         }
-        ExoPlayer player = new ExoPlayer.Builder(this).build();
+
+        DefaultRenderersFactory renderers = new DefaultRenderersFactory(this)
+            .setEnableDecoderFallback(true);
+        ExoPlayer player = new ExoPlayer.Builder(this, renderers).build();
         activePlayer = player;
         PlayerView playerView = new PlayerView(this);
         activePlayerView = playerView;
@@ -791,13 +798,29 @@ public class MainActivity extends Activity {
 
         player.addListener(new Player.Listener() {
             @Override public void onPlayerError(PlaybackException error) {
-                String message = error.getMessage();
-                if (message == null || message.trim().isEmpty()) {
-                    message = "The stream may be offline, geo-restricted, or using a format the TV cannot decode.";
-                } else {
-                    message = message + "\n\nThe stream may also be offline or geo-restricted.";
-                }
-                showInfo("Playback issue", message);
+                String detail = error.getMessage();
+                if (detail == null || detail.trim().isEmpty()) detail = "No additional decoder or network details were provided.";
+                String message = "Channel: " + title
+                    + "\\nError: " + error.getErrorCodeName()
+                    + "\\n\\n" + detail
+                    + "\\n\\nThis can happen when a stream is damaged, offline, geo-restricted, or uses a video profile the TV cannot decode. Decoder fallback is enabled.";
+                new AlertDialog.Builder(MainActivity.this)
+                    .setTitle("Playback issue")
+                    .setMessage(message)
+                    .setPositiveButton("RETRY", (dialog, which) -> playDemo(title, url))
+                    .setNegativeButton("BACK TO CHANNELS", (dialog, which) -> {
+                        playerOpen = false;
+                        if (activePlayerView != null) activePlayerView.setPlayer(null);
+                        if (activePlayer != null) {
+                            activePlayer.release();
+                            activePlayer = null;
+                        }
+                        activePlayerView = null;
+                        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+                        if (!providerServer.isEmpty() && !providerUser.isEmpty()) showProviderLiveTv();
+                        else showHome();
+                    })
+                    .show();
             }
         });
 
