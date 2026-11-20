@@ -81,7 +81,13 @@ public class MainActivity extends Activity {
             String url = saved.getString("url_" + name, "");
             if (!url.isEmpty()) favouriteUrls.put(name, url);
         }
-        showHome();
+        // Automatically resume the saved provider session when the app launches.
+        // If no saved credentials are available, show the normal home screen.
+        if (!providerServer.isEmpty() && !providerUser.isEmpty() && !providerPass.isEmpty()) {
+            showProviderLiveTv();
+        } else {
+            showHome();
+        }
     }
 
 
