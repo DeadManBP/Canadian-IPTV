@@ -16,6 +16,8 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.EditText;
+import android.text.InputType;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.ArrayList;
@@ -30,6 +32,18 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.net.URLEncoder;
+import org.json.JSONObject;
+import org.json.JSONArray;
+import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyProperties;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import java.security.KeyStore;
+import java.nio.charset.StandardCharsets;
+import android.util.Base64;
 
 public class MainActivity extends Activity {
     private final int BG = Color.rgb(13, 16, 22);
@@ -46,6 +60,9 @@ public class MainActivity extends Activity {
     private final Set<String> favourites = new LinkedHashSet<>();
     private final java.util.Map<String, String> favouriteUrls = new java.util.LinkedHashMap<>();
     private final ExecutorService imageExecutor = Executors.newFixedThreadPool(3);
+    private String providerServer = "";
+    private String providerUser = "";
+    private String providerPass = "";
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -58,6 +75,225 @@ public class MainActivity extends Activity {
             if (!url.isEmpty()) favouriteUrls.put(name, url);
         }
         showHome();
+    }
+
+
+    private void showProviderLogin() {
+        LinearLayout root = createRoot("PROVIDER");
+        LinearLayout page = pageContent(root);
+        addPageHeader(page, "XTREAM CODES", "Connect your IPTV provider",
+            "Enter the server address, username and password supplied by your provider. Your details are encrypted on this device.");
+        android.content.SharedPreferences prefs = getSharedPreferences("canadian_iptv", MODE_PRIVATE);
+        EditText server = inputField("Server address (example: https://provider.com)");
+        EditText username = inputField("Username");
+        EditText password = inputField("Password");
+        password.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        String savedServer = decrypt(prefs.getString("provider_server", ""));
+        String savedUser = decrypt(prefs.getString("provider_user", ""));
+        String savedPass = decrypt(prefs.getString("provider_pass", ""));
+        if (!savedServer.isEmpty()) server.setText(savedServer);
+        if (!savedUser.isEmpty()) username.setText(savedUser);
+        if (!savedPass.isEmpty()) password.setText(savedPass);
+        page.addView(server, fieldParams());
+        page.addView(username, fieldParams());
+        page.addView(password, fieldParams());
+        TextView connect = actionCard("CONNECT AND LOAD CHANNELS", true);
+        LinearLayout.LayoutParams cp = params(280, 48);
+        cp.topMargin = dp(14);
+        page.addView(connect, cp);
+        TextView status = text("Your provider login is kept on this TV, not sent to Canadian IPTV servers.", 13, MUTED, false);
+        LinearLayout.LayoutParams stp = params(-1, -2);
+        stp.topMargin = dp(14);
+        page.addView(status, stp);
+        connect.setOnClickListener(v -> {
+            String address = server.getText().toString().trim();
+            String user = username.getText().toString().trim();
+            String pass = password.getText().toString();
+            if (address.isEmpty() || user.isEmpty() || pass.isEmpty()) {
+                showInfo("Missing details", "Enter all three details from your IPTV provider.");
+                return;
+            }
+            if (!address.startsWith("http://") && !address.startsWith("https://")) address = "http://" + address;
+            while (address.endsWith("/")) address = address.substring(0, address.length() - 1);
+            final String finalAddress = address;
+            connect.setText("CONNECTING…");
+            connect.setEnabled(false);
+            status.setText("Checking your provider account…");
+            playlistExecutor.execute(() -> {
+                String problem = null;
+                JSONObject account = null;
+                try {
+                    String api = finalAddress + "/player_api.php?username=" + enc(user) + "&password=" + enc(pass);
+                    account = new JSONObject(httpGet(api));
+                    JSONObject info = account.optJSONObject("user_info");
+                    if (info == null || info.optInt("auth", 0) != 1) {
+                        problem = "The provider did not accept those login details. Check the server address, username and password.";
+                    }
+                } catch (Exception e) {
+                    problem = "Could not connect: " + safeError(e);
+                }
+                final String error = problem;
+                final JSONObject result = account;
+                runOnUiThread(() -> {
+                    connect.setText("CONNECT AND LOAD CHANNELS");
+                    connect.setEnabled(true);
+                    if (error != null) {
+                        status.setText(error);
+                        return;
+                    }
+                    prefs.edit()
+                        .putString("provider_server", encrypt(finalAddress))
+                        .putString("provider_user", encrypt(user))
+                        .putString("provider_pass", encrypt(pass))
+                        .apply();
+                    providerServer = finalAddress;
+                    providerUser = user;
+                    providerPass = pass;
+                    JSONObject info = result.optJSONObject("user_info");
+                    String expiry = info == null ? "" : info.optString("exp_date", "");
+                    status.setText("Connected successfully" + (expiry.isEmpty() || "null".equals(expiry) ? "" : " • Account expiry: " + expiry) + ". Loading your live channels…");
+                    showProviderLiveTv();
+                });
+            });
+        });
+        setContentView(root);
+        focusFirst(root);
+    }
+
+    private EditText inputField(String hint) {
+        EditText field = new EditText(this);
+        field.setSingleLine(true);
+        field.setTextColor(WHITE);
+        field.setHintTextColor(MUTED);
+        field.setHint(hint);
+        field.setTextSize(16);
+        field.setPadding(dp(14), dp(8), dp(14), dp(8));
+        field.setBackground(round(PANEL_LIGHT, 10));
+        field.setFocusable(true);
+        field.setSelectAllOnFocus(false);
+        return field;
+    }
+
+    private LinearLayout.LayoutParams fieldParams() {
+        LinearLayout.LayoutParams p = params(520, 52);
+        p.topMargin = dp(12);
+        return p;
+    }
+
+    private String httpGet(String address) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(address).openConnection();
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(25000);
+        c.setRequestProperty("User-Agent", "CanadianIPTV/0.4 AndroidTV");
+        try {
+            int code = c.getResponseCode();
+            java.io.InputStream stream = code >= 200 && code < 400 ? c.getInputStream() : c.getErrorStream();
+            if (stream == null) throw new java.io.IOException("HTTP " + code);
+            StringBuilder out = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) out.append(line);
+            }
+            if (code < 200 || code >= 400) throw new java.io.IOException("Provider returned HTTP " + code);
+            return out.toString();
+        } finally { c.disconnect(); }
+    }
+
+    private String enc(String value) throws Exception {
+        return URLEncoder.encode(value, "UTF-8");
+    }
+
+    private String safeError(Exception e) {
+        String message = e.getMessage();
+        if (message == null) return "Network or server error";
+        return message.replaceAll("(?i)(username|password)=[^& ]+", "$1=[hidden]");
+    }
+
+    private SecretKey providerKey() throws Exception {
+        KeyStore store = KeyStore.getInstance("AndroidKeyStore");
+        store.load(null);
+        String alias = "CanadianIPTVProviderKey";
+        if (store.containsAlias(alias)) return ((SecretKey) store.getKey(alias, null));
+        KeyGenerator generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
+        generator.init(new KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setRandomizedEncryptionRequired(true)
+            .build());
+        return generator.generateKey();
+    }
+
+    private String encrypt(String value) {
+        if (value == null || value.isEmpty()) return "";
+        try {
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, providerKey());
+            byte[] encrypted = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
+            byte[] iv = cipher.getIV();
+            byte[] combined = new byte[iv.length + encrypted.length];
+            System.arraycopy(iv, 0, combined, 0, iv.length);
+            System.arraycopy(encrypted, 0, combined, iv.length, encrypted.length);
+            return Base64.encodeToString(combined, Base64.NO_WRAP);
+        } catch (Exception e) { return ""; }
+    }
+
+    private String decrypt(String value) {
+        if (value == null || value.isEmpty()) return "";
+        try {
+            byte[] combined = Base64.decode(value, Base64.NO_WRAP);
+            byte[] iv = java.util.Arrays.copyOfRange(combined, 0, 12);
+            byte[] encrypted = java.util.Arrays.copyOfRange(combined, 12, combined.length);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, providerKey(), new GCMParameterSpec(128, iv));
+            return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
+        } catch (Exception e) { return ""; }
+    }
+
+    private void showProviderLiveTv() {
+        LinearLayout root = createRoot("LIVE TV");
+        LinearLayout page = pageContent(root);
+        addPageHeader(page, "YOUR PROVIDER", "Live TV", "Channels supplied by your Xtream Codes provider.");
+        TextView status = text("Loading your channel list…", 14, MUTED, false);
+        LinearLayout.LayoutParams sp = params(-1, -2);
+        sp.topMargin = dp(14);
+        page.addView(status, sp);
+        setContentView(root);
+        focusFirst(root);
+        playlistExecutor.execute(() -> {
+            ArrayList<String[]> channels = new ArrayList<>();
+            String problem = null;
+            try {
+                String base = providerServer + "/player_api.php?username=" + enc(providerUser) + "&password=" + enc(providerPass) + "&action=get_live_streams";
+                JSONArray list = new JSONArray(httpGet(base));
+                for (int i = 0; i < list.length(); i++) {
+                    JSONObject item = list.optJSONObject(i);
+                    if (item == null) continue;
+                    String id = item.optString("stream_id", "");
+                    String name = item.optString("name", "Unnamed channel");
+                    String ext = item.optString("container_extension", "ts");
+                    String logo = item.optString("stream_icon", "");
+                    if (id.isEmpty()) continue;
+                    String stream = providerServer + "/live/" + pathPart(providerUser) + "/" + pathPart(providerPass) + "/" + id + "." + ext;
+                    channels.add(new String[]{name, "Provider live channel", stream, logo});
+                }
+            } catch (Exception e) { problem = safeError(e); }
+            final String error = problem;
+            runOnUiThread(() -> {
+                if (page.getParent() == null) return;
+                if (error != null) {
+                    status.setText("Could not load channels: " + error);
+                    return;
+                }
+                status.setText(channels.size() + " live channels loaded.");
+                for (String[] channel : channels) addMediaRow(page, channel[0], channel[1], channel[2], channel[3]);
+                if (channels.isEmpty()) status.setText("Login worked, but the provider returned no live channels.");
+            });
+        });
+    }
+
+    private String pathPart(String value) {
+        try { return URLEncoder.encode(value, "UTF-8").replace("+", "%20"); }
+        catch (Exception e) { return value; }
     }
 
     private void showHome() {
@@ -97,6 +333,11 @@ public class MainActivity extends Activity {
         lp.topMargin = dp(12);
         hero.addView(live, lp);
         live.setOnClickListener(v -> showLiveTv());
+        TextView provider = actionCard("▣   CONNECT YOUR IPTV PROVIDER", true);
+        LinearLayout.LayoutParams providerParams = params(300, 44);
+        providerParams.topMargin = dp(14);
+        page.addView(provider, providerParams);
+        provider.setOnClickListener(v -> showProviderLogin());
         TextView note = text("Free streams can change, go offline or be restricted by location.", 12, MUTED, false);
         LinearLayout.LayoutParams np = params(-1, -2);
         np.topMargin = dp(12);
@@ -128,6 +369,7 @@ public class MainActivity extends Activity {
         divp.bottomMargin = dp(14);
         rail.addView(divider, divp);
         addRailItem(rail, "⌂   HOME", selected.equals("HOME"), this::showHome);
+        addRailItem(rail, "▣   PROVIDER LOGIN", selected.equals("PROVIDER"), this::showProviderLogin);
         addRailItem(rail, "▣   LIVE TV", selected.equals("LIVE TV"), this::showLiveTv);
         addRailItem(rail, "▤   MOVIES", selected.equals("MOVIES"), this::showMovies);
         addRailItem(rail, "▥   SERIES", selected.equals("SERIES"), this::showSeries);
