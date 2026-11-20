@@ -252,33 +252,85 @@ public class MainActivity extends Activity {
     private void showProviderLiveTv() {
         LinearLayout root = createRoot("LIVE TV");
         LinearLayout page = pageContent(root);
-        addPageHeader(page, "YOUR PROVIDER", "Live TV", "Channels supplied by your Xtream Codes provider.");
-        TextView status = text("Loading your channel list…", 14, MUTED, false);
+        addPageHeader(page, "YOUR PROVIDER", "Live TV", "Browse every channel from your provider by category. Channels are shown 50 at a time to keep the TV responsive.");
+
+        TextView status = text("Loading your provider categories and channel list…", 14, MUTED, false);
         LinearLayout.LayoutParams sp = params(-1, -2);
         sp.topMargin = dp(14);
         page.addView(status, sp);
+
+        android.widget.HorizontalScrollView categoryScroll = new android.widget.HorizontalScrollView(this);
+        categoryScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout categoryBar = new LinearLayout(this);
+        categoryBar.setOrientation(LinearLayout.HORIZONTAL);
+        categoryScroll.addView(categoryBar);
+        LinearLayout.LayoutParams catScrollParams = params(-1, 48);
+        catScrollParams.topMargin = dp(12);
+        page.addView(categoryScroll, catScrollParams);
+
+        LinearLayout channelContainer = new LinearLayout(this);
+        channelContainer.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams channelParams = params(-1, -2);
+        channelParams.topMargin = dp(4);
+        page.addView(channelContainer, channelParams);
+
+        LinearLayout pager = new LinearLayout(this);
+        pager.setOrientation(LinearLayout.HORIZONTAL);
+        pager.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams pagerParams = params(-1, 48);
+        pagerParams.topMargin = dp(14);
+        page.addView(pager, pagerParams);
+        TextView previous = actionCard("◀  PREVIOUS", false);
+        TextView pageLabel = text("Page 1", 13, MUTED, true);
+        pageLabel.setGravity(Gravity.CENTER);
+        TextView next = actionCard("NEXT  ▶", true);
+        pager.addView(previous, params(150, 42));
+        pager.addView(pageLabel, new LinearLayout.LayoutParams(0, -2, 1));
+        pager.addView(next, params(150, 42));
+        previous.setEnabled(false);
+        previous.setAlpha(0.45f);
+        next.setEnabled(false);
+        next.setAlpha(0.45f);
+
         setContentView(root);
         focusFirst(root);
+
         playlistExecutor.execute(() -> {
             ArrayList<String[]> channels = new ArrayList<>();
+            java.util.LinkedHashMap<String, String> categories = new java.util.LinkedHashMap<>();
             String problem = null;
             try {
-                String base = providerServer + "/player_api.php?username=" + enc(providerUser) + "&password=" + enc(providerPass) + "&action=get_live_streams";
-                JSONArray list = new JSONArray(httpGet(base));
+                String credentials = "?username=" + enc(providerUser) + "&password=" + enc(providerPass);
+                try {
+                    JSONArray categoryList = new JSONArray(httpGet(providerServer + "/player_api.php" + credentials + "&action=get_live_categories"));
+                    for (int i = 0; i < categoryList.length(); i++) {
+                        JSONObject category = categoryList.optJSONObject(i);
+                        if (category == null) continue;
+                        String id = category.optString("category_id", "");
+                        String name = category.optString("category_name", "Other");
+                        if (!id.isEmpty()) categories.put(id, name);
+                    }
+                } catch (Exception ignored) {
+                    // Some providers do not expose category metadata. The all-channels view still works.
+                }
+
+                JSONArray list = new JSONArray(httpGet(providerServer + "/player_api.php" + credentials + "&action=get_live_streams"));
                 for (int i = 0; i < list.length(); i++) {
                     JSONObject item = list.optJSONObject(i);
                     if (item == null) continue;
                     String id = item.optString("stream_id", "");
+                    if (id.isEmpty()) continue;
                     String name = item.optString("name", "Unnamed channel");
                     String ext = item.optString("container_extension", "ts");
+                    if (ext == null || ext.isEmpty() || "null".equalsIgnoreCase(ext)) ext = "ts";
                     String logo = item.optString("stream_icon", "");
-                    if (id.isEmpty()) continue;
+                    String categoryId = item.optString("category_id", "");
+                    String categoryName = categories.containsKey(categoryId) ? categories.get(categoryId) : "Other / Uncategorised";
                     String stream = providerServer + "/live/" + pathPart(providerUser) + "/" + pathPart(providerPass) + "/" + id + "." + ext;
-                    channels.add(new String[]{name, "Provider live channel", stream, logo});
-                    // Keep the first screen responsive on Android TV. Some providers return thousands of streams.
-                    if (channels.size() >= 150) break;
+                    channels.add(new String[]{name, categoryName, stream, logo, categoryId});
                 }
             } catch (Exception e) { problem = safeError(e); }
+
             final String error = problem;
             runOnUiThread(() -> {
                 if (page.getParent() == null) return;
@@ -286,9 +338,67 @@ public class MainActivity extends Activity {
                     status.setText("Could not load channels: " + error);
                     return;
                 }
-                status.setText(channels.size() + " live channels loaded" + (channels.size() >= 150 ? " • showing first 150 for stability" : "") + ".");
-                for (String[] channel : channels) addMediaRow(page, channel[0], channel[1], channel[2], channel[3]);
-                if (channels.isEmpty()) status.setText("Login worked, but the provider returned no live channels.");
+                if (channels.isEmpty()) {
+                    status.setText("Login worked, but the provider returned no live channels.");
+                    return;
+                }
+
+                final String[] selectedCategory = new String[]{""};
+                final int[] currentPage = new int[]{0};
+                final int pageSize = 50;
+                java.util.LinkedHashMap<String, String> availableCategories = new java.util.LinkedHashMap<>();
+                availableCategories.put("", "ALL CHANNELS");
+                availableCategories.putAll(categories);
+                if (categories.isEmpty()) availableCategories.put("uncategorised", "OTHER / UNCATEGORISED");
+
+                Runnable render = new Runnable() {
+                    @Override public void run() {
+                        ArrayList<String[]> filtered = new ArrayList<>();
+                        for (String[] channel : channels) {
+                            if (selectedCategory[0].isEmpty() || selectedCategory[0].equals(channel[4])) filtered.add(channel);
+                        }
+                        int totalPages = Math.max(1, (filtered.size() + pageSize - 1) / pageSize);
+                        currentPage[0] = Math.max(0, Math.min(currentPage[0], totalPages - 1));
+                        int from = currentPage[0] * pageSize;
+                        int to = Math.min(from + pageSize, filtered.size());
+                        channelContainer.removeAllViews();
+                        for (int i = from; i < to; i++) {
+                            String[] channel = filtered.get(i);
+                            addMediaRow(channelContainer, channel[0], channel[1], channel[2], channel[3]);
+                        }
+                        status.setText(filtered.size() + " channels • " + categories.size() + " provider categories • 50 channels per page");
+                        pageLabel.setText("Page " + (currentPage[0] + 1) + " of " + totalPages);
+                        previous.setEnabled(currentPage[0] > 0);
+                        previous.setAlpha(currentPage[0] > 0 ? 1f : 0.45f);
+                        next.setEnabled(currentPage[0] < totalPages - 1);
+                        next.setAlpha(currentPage[0] < totalPages - 1 ? 1f : 0.45f);
+                    }
+                };
+
+                categoryBar.removeAllViews();
+                for (java.util.Map.Entry<String, String> entry : availableCategories.entrySet()) {
+                    String categoryId = entry.getKey();
+                    TextView chip = actionCard(entry.getValue(), categoryId.equals(selectedCategory[0]));
+                    chip.setTextSize(12);
+                    LinearLayout.LayoutParams chipParams = params(-2, 40);
+                    chipParams.rightMargin = dp(8);
+                    categoryBar.addView(chip, chipParams);
+                    chip.setOnClickListener(v -> {
+                        selectedCategory[0] = categoryId;
+                        currentPage[0] = 0;
+                        for (int j = 0; j < categoryBar.getChildCount(); j++) {
+                            View child = categoryBar.getChildAt(j);
+                            if (child instanceof TextView) {
+                                boolean selected = categoryId.equals(availableCategories.keySet().toArray(new String[0])[j]);
+                                child.setBackground(round(selected ? RED : PANEL_LIGHT, 10));
+                            }
+                        }
+                        render.run();
+                    });
+                }
+                previous.setOnClickListener(v -> { currentPage[0]--; render.run(); });
+                next.setOnClickListener(v -> { currentPage[0]++; render.run(); });
+                render.run();
             });
         });
     }
