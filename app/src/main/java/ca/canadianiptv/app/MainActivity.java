@@ -275,6 +275,8 @@ public class MainActivity extends Activity {
                     if (id.isEmpty()) continue;
                     String stream = providerServer + "/live/" + pathPart(providerUser) + "/" + pathPart(providerPass) + "/" + id + "." + ext;
                     channels.add(new String[]{name, "Provider live channel", stream, logo});
+                    // Keep the first screen responsive on Android TV. Some providers return thousands of streams.
+                    if (channels.size() >= 150) break;
                 }
             } catch (Exception e) { problem = safeError(e); }
             final String error = problem;
@@ -284,7 +286,7 @@ public class MainActivity extends Activity {
                     status.setText("Could not load channels: " + error);
                     return;
                 }
-                status.setText(channels.size() + " live channels loaded.");
+                status.setText(channels.size() + " live channels loaded" + (channels.size() >= 150 ? " • showing first 150 for stability" : "") + ".");
                 for (String[] channel : channels) addMediaRow(page, channel[0], channel[1], channel[2], channel[3]);
                 if (channels.isEmpty()) status.setText("Login worked, but the provider returned no live channels.");
             });
