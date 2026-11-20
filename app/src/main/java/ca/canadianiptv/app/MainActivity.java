@@ -67,6 +67,9 @@ public class MainActivity extends Activity {
     private ExoPlayer activePlayer;
     private PlayerView activePlayerView;
     private boolean playerOpen = false;
+    private String providerSelectedCategory = "";
+    private int providerCurrentPage = 0;
+    private String lastPlayedChannelName = "";
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -356,8 +359,8 @@ public class MainActivity extends Activity {
                     return;
                 }
 
-                final String[] selectedCategory = new String[]{""};
-                final int[] currentPage = new int[]{0};
+                final String[] selectedCategory = new String[]{providerSelectedCategory};
+                final int[] currentPage = new int[]{providerCurrentPage};
                 final int pageSize = 50;
                 java.util.LinkedHashMap<String, String> availableCategories = new java.util.LinkedHashMap<>();
                 availableCategories.put("", "ALL CHANNELS");
@@ -377,7 +380,8 @@ public class MainActivity extends Activity {
                         channelContainer.removeAllViews();
                         for (int i = from; i < to; i++) {
                             String[] channel = filtered.get(i);
-                            addMediaRow(channelContainer, channel[0], channel[1], channel[2], channel[3]);
+                            TextView playButton = addMediaRowReturningPlay(channelContainer, channel[0], channel[1], channel[2], channel[3]);
+                            if (channel[0].equals(lastPlayedChannelName)) playButton.requestFocus();
                         }
                         status.setText(filtered.size() + " channels • " + categories.size() + " provider categories • 50 channels per page");
                         pageLabel.setText("Page " + (currentPage[0] + 1) + " of " + totalPages);
@@ -398,7 +402,9 @@ public class MainActivity extends Activity {
                     categoryBar.addView(chip, chipParams);
                     chip.setOnClickListener(v -> {
                         selectedCategory[0] = categoryId;
+                        providerSelectedCategory = categoryId;
                         currentPage[0] = 0;
+                        providerCurrentPage = 0;
                         for (int j = 0; j < categoryBar.getChildCount(); j++) {
                             View child = categoryBar.getChildAt(j);
                             if (child instanceof TextView) {
@@ -409,8 +415,8 @@ public class MainActivity extends Activity {
                         render.run();
                     });
                 }
-                previous.setOnClickListener(v -> { currentPage[0]--; render.run(); });
-                next.setOnClickListener(v -> { currentPage[0]++; render.run(); });
+                previous.setOnClickListener(v -> { currentPage[0]--; providerCurrentPage = currentPage[0]; render.run(); });
+                next.setOnClickListener(v -> { currentPage[0]++; providerCurrentPage = currentPage[0]; render.run(); });
                 render.run();
             });
         });
@@ -679,6 +685,10 @@ public class MainActivity extends Activity {
     }
 
     private void addMediaRow(LinearLayout page, String name, String detail, String url, String logoUrl) {
+        addMediaRowReturningPlay(page, name, detail, url, logoUrl);
+    }
+
+    private TextView addMediaRowReturningPlay(LinearLayout page, String name, String detail, String url, String logoUrl) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -758,6 +768,7 @@ public class MainActivity extends Activity {
         play.setOnClickListener(v -> playDemo(name, url));
         row.setFocusable(false);
         row.setClickable(false);
+        return play;
     }
 
     private String channelInitials(String name) {
@@ -769,6 +780,7 @@ public class MainActivity extends Activity {
     }
 
     private void playDemo(String title, String url) {
+        lastPlayedChannelName = title;
         // Keep hardware acceleration as the normal path, but allow Media3 to try
         // alternate available decoders when the device's preferred codec fails.
         if (activePlayerView != null) activePlayerView.setPlayer(null);
