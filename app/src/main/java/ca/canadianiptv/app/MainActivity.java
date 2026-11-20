@@ -762,17 +762,38 @@ public class MainActivity extends Activity {
         playerView.setUseController(true);
         playerView.setControllerAutoShow(true);
         playerView.setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING);
+        playerView.setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT);
         playerView.setBackgroundColor(Color.BLACK);
 
         FrameLayout frame = new FrameLayout(this);
         frame.setBackgroundColor(Color.BLACK);
         frame.addView(playerView, new FrameLayout.LayoutParams(-1, -1));
 
-        AlertDialog dialog = new AlertDialog.Builder(this)
-            .setTitle("PLAYING  •  " + title)
-            .setView(frame)
-            .setNegativeButton("Close", (d, w) -> player.pause())
-            .create();
+        TextView titleOverlay = text("▶  " + title, 16, WHITE, true);
+        titleOverlay.setGravity(Gravity.CENTER_VERTICAL);
+        titleOverlay.setPadding(dp(22), dp(12), dp(22), dp(12));
+        titleOverlay.setBackgroundColor(Color.argb(190, 13, 16, 22));
+        FrameLayout.LayoutParams titleParams = new FrameLayout.LayoutParams(-1, dp(54), Gravity.TOP);
+        frame.addView(titleOverlay, titleParams);
+
+        TextView close = actionCard("✕  CLOSE", true);
+        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(150), dp(48), Gravity.BOTTOM | Gravity.RIGHT);
+        closeParams.setMargins(0, 0, dp(22), dp(20));
+        frame.addView(close, closeParams);
+
+        View decor = getWindow().getDecorView();
+        int oldSystemUi = decor.getSystemUiVisibility();
+        decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+
+        setContentView(frame);
+        close.setOnClickListener(v -> {
+            playerView.setPlayer(null);
+            player.release();
+            decor.setSystemUiVisibility(oldSystemUi);
+            showHome();
+        });
 
         player.addListener(new Player.Listener() {
             @Override public void onPlayerError(PlaybackException error) {
@@ -780,18 +801,11 @@ public class MainActivity extends Activity {
                 if (message == null || message.trim().isEmpty()) {
                     message = "The stream may be offline, geo-restricted, or using a format the TV cannot decode.";
                 } else {
-                    message = message + "\\n\\nThe stream may also be offline or geo-restricted.";
+                    message = message + "\n\nThe stream may also be offline or geo-restricted.";
                 }
                 showInfo("Playback issue", message);
             }
         });
-
-        dialog.setOnDismissListener(d -> {
-            playerView.setPlayer(null);
-            player.release();
-        });
-        dialog.show();
-        dialog.getWindow().setLayout(dp(900), dp(560));
 
         MediaItem mediaItem = MediaItem.fromUri(Uri.parse(url));
         player.setMediaItem(mediaItem);
