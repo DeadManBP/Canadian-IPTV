@@ -503,6 +503,7 @@ public class MainActivity extends Activity {
         addRailItem(rail, "⌂   HOME", selected.equals("HOME"), this::showHome);
         addRailItem(rail, "▣   PROVIDER LOGIN", selected.equals("PROVIDER"), this::showProviderLogin);
         addRailItem(rail, "▣   LIVE TV", selected.equals("LIVE TV"), this::showLiveTv);
+        addRailItem(rail, "▦   TV GUIDE", selected.equals("GUIDE"), this::showTvGuide);
         addRailItem(rail, "▤   MOVIES", selected.equals("MOVIES"), this::showMovies);
         addRailItem(rail, "▥   SERIES", selected.equals("SERIES"), this::showSeries);
         addRailItem(rail, "★   FAVOURITES", selected.equals("FAVOURITES"), this::showFavourites);
@@ -632,6 +633,142 @@ public class MainActivity extends Activity {
         start += marker.length();
         int end = line.indexOf('"', start);
         return end < 0 ? "" : line.substring(start, end);
+    }
+
+    private void showTvGuide() {
+        LinearLayout root = createRoot("GUIDE");
+        LinearLayout page = pageContent(root);
+        addPageHeader(page, "TV GUIDE", "What's on now and next",
+            "Programme listings from your IPTV provider. Select WATCH to tune into a channel.");
+        TextView status = text("Loading channel guide…", 14, MUTED, false);
+        LinearLayout.LayoutParams statusParams = params(-1, -2);
+        statusParams.topMargin = dp(12);
+        page.addView(status, statusParams);
+        LinearLayout headings = new LinearLayout(this);
+        headings.setOrientation(LinearLayout.HORIZONTAL);
+        headings.setPadding(dp(12), dp(10), dp(12), dp(10));
+        headings.addView(text("CHANNEL", 11, MUTED, true), new LinearLayout.LayoutParams(dp(190), -2));
+        headings.addView(text("NOW PLAYING", 11, MUTED, true), new LinearLayout.LayoutParams(0, -2, 1));
+        headings.addView(text("UP NEXT", 11, MUTED, true), new LinearLayout.LayoutParams(0, -2, 1));
+        page.addView(headings, params(-1, -2));
+        LinearLayout rows = new LinearLayout(this);
+        rows.setOrientation(LinearLayout.VERTICAL);
+        page.addView(rows, params(-1, -2));
+        LinearLayout pager = new LinearLayout(this);
+        pager.setOrientation(LinearLayout.HORIZONTAL);
+        pager.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams pagerParams = params(-1, 48);
+        pagerParams.topMargin = dp(12);
+        page.addView(pager, pagerParams);
+        TextView previous = actionCard("◀  PREVIOUS", false);
+        TextView pageLabel = text("Page 1", 13, MUTED, true);
+        pageLabel.setGravity(Gravity.CENTER);
+        TextView next = actionCard("NEXT  ▶", true);
+        pager.addView(previous, params(150, 42));
+        pager.addView(pageLabel, new LinearLayout.LayoutParams(0, -2, 1));
+        pager.addView(next, params(150, 42));
+        setContentView(root);
+        playlistExecutor.execute(() -> {
+            ArrayList<String[]> channels = new ArrayList<>();
+            String problem = null;
+            try {
+                String credentials = "?username=" + enc(providerUser) + "&password=" + enc(providerPass);
+                JSONArray list = new JSONArray(httpGet(providerServer + "/player_api.php" + credentials + "&action=get_live_streams"));
+                for (int i = 0; i < list.length(); i++) {
+                    JSONObject item = list.optJSONObject(i);
+                    if (item == null) continue;
+                    String id = item.optString("stream_id", "");
+                    if (id.isEmpty()) continue;
+                    String name = item.optString("name", "Unnamed channel");
+                    String ext = item.optString("container_extension", "ts");
+                    if (ext.isEmpty() || "null".equalsIgnoreCase(ext)) ext = "ts";
+                    String url = providerServer + "/live/" + pathPart(providerUser) + "/" + pathPart(providerPass) + "/" + id + "." + ext;
+                    channels.add(new String[]{name, id, url, item.optString("stream_icon", "")});
+                }
+            } catch (Exception e) { problem = safeError(e); }
+            final String error = problem;
+            runOnUiThread(() -> {
+                if (isFinishing()) return;
+                status.setText(error == null ? channels.size() + " channels in your provider guide" : "Could not load guide: " + error);
+                if (error != null || channels.isEmpty()) return;
+                final int pageSize = 25;
+                final int[] currentPage = {0};
+                Runnable render = new Runnable() {
+                    @Override public void run() {
+                        rows.removeAllViews();
+                        int totalPages = Math.max(1, (channels.size() + pageSize - 1) / pageSize);
+                        currentPage[0] = Math.max(0, Math.min(currentPage[0], totalPages - 1));
+                        int from = currentPage[0] * pageSize;
+                        int to = Math.min(channels.size(), from + pageSize);
+                        for (int i = from; i < to; i++) {
+                            String[] channel = channels.get(i);
+                            LinearLayout row = new LinearLayout(MainActivity.this);
+                            row.setOrientation(LinearLayout.HORIZONTAL);
+                            row.setGravity(Gravity.CENTER_VERTICAL);
+                            row.setPadding(dp(12), dp(9), dp(10), dp(9));
+                            row.setBackground(round(PANEL, 9));
+                            LinearLayout.LayoutParams rowParams = params(-1, 76);
+                            rowParams.topMargin = dp(5);
+                            rows.addView(row, rowParams);
+                            LinearLayout channelInfo = new LinearLayout(MainActivity.this);
+                            channelInfo.setOrientation(LinearLayout.VERTICAL);
+                            row.addView(channelInfo, new LinearLayout.LayoutParams(dp(178), -2));
+                            channelInfo.addView(text(channel[0], 13, WHITE, true));
+                            TextView watch = actionCard("WATCH", true);
+                            watch.setTextSize(10);
+                            LinearLayout.LayoutParams watchParams = params(78, 34);
+                            watchParams.topMargin = dp(4);
+                            channelInfo.addView(watch, watchParams);
+                            watch.setOnClickListener(v -> playDemo(channel[0], channel[2]));
+                            TextView now = text("Loading…", 12, MUTED, false);
+                            TextView upcoming = text("Loading…", 12, MUTED, false);
+                            row.addView(now, new LinearLayout.LayoutParams(0, -2, 1));
+                            row.addView(upcoming, new LinearLayout.LayoutParams(0, -2, 1));
+                            loadGuidePair(now, upcoming, channel[1]);
+                        }
+                        pageLabel.setText("Page " + (currentPage[0] + 1) + " of " + totalPages);
+                        previous.setEnabled(currentPage[0] > 0);
+                        previous.setAlpha(currentPage[0] > 0 ? 1f : 0.45f);
+                        next.setEnabled(currentPage[0] < totalPages - 1);
+                        next.setAlpha(currentPage[0] < totalPages - 1 ? 1f : 0.45f);
+                    }
+                };
+                previous.setOnClickListener(v -> { currentPage[0]--; render.run(); });
+                next.setOnClickListener(v -> { currentPage[0]++; render.run(); });
+                render.run();
+            });
+        });
+    }
+
+    private void loadGuidePair(TextView nowView, TextView nextView, String streamId) {
+        epgExecutor.execute(() -> {
+            String nowText = "No programme data";
+            String nextText = "No upcoming data";
+            try {
+                String credentials = "?username=" + enc(providerUser) + "&password=" + enc(providerPass);
+                String address = providerServer + "/player_api.php" + credentials
+                    + "&action=get_short_epg&stream_id=" + enc(streamId) + "&limit=2";
+                JSONObject response = new JSONObject(httpGet(address));
+                JSONArray programmes = response.optJSONArray("epg_list");
+                if (programmes == null) programmes = response.optJSONArray("epg");
+                if (programmes == null) programmes = response.optJSONArray("epg_listings");
+                if (programmes != null && programmes.length() > 0) {
+                    JSONObject current = programmes.optJSONObject(0);
+                    JSONObject next = programmes.length() > 1 ? programmes.optJSONObject(1) : null;
+                    if (current != null) nowText = decodeEpgText(current.optString("title", "Programme unavailable"))
+                        + "\\n" + epgTime(current, "start", "start_timestamp") + " - " + epgTime(current, "end", "stop_timestamp");
+                    if (next != null) nextText = decodeEpgText(next.optString("title", "Programme unavailable"))
+                        + "\\n" + epgTime(next, "start", "start_timestamp") + " - " + epgTime(next, "end", "stop_timestamp");
+                }
+            } catch (Exception ignored) { }
+            final String nowResult = nowText;
+            final String nextResult = nextText;
+            runOnUiThread(() -> {
+                if (isFinishing()) return;
+                nowView.setText(nowResult);
+                nextView.setText(nextResult);
+            });
+        });
     }
 
     private void showMovies() {
