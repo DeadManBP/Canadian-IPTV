@@ -343,7 +343,7 @@ public class MainActivity extends Activity {
                     String categoryId = item.optString("category_id", "");
                     String categoryName = categories.containsKey(categoryId) ? categories.get(categoryId) : "Other / Uncategorised";
                     String stream = providerServer + "/live/" + pathPart(providerUser) + "/" + pathPart(providerPass) + "/" + id + "." + ext;
-                    channels.add(new String[]{name, categoryName, stream, logo, categoryId});
+                    channels.add(new String[]{name, categoryName, stream, logo, categoryId, id});
                 }
             } catch (Exception e) { problem = safeError(e); }
 
@@ -380,7 +380,7 @@ public class MainActivity extends Activity {
                         channelContainer.removeAllViews();
                         for (int i = from; i < to; i++) {
                             String[] channel = filtered.get(i);
-                            TextView playButton = addMediaRowReturningPlay(channelContainer, channel[0], channel[1], channel[2], channel[3]);
+                            TextView playButton = addMediaRowReturningPlay(channelContainer, channel[0], channel[1], channel[2], channel[3], channel[5]);
                             if (channel[0].equals(lastPlayedChannelName)) playButton.requestFocus();
                         }
                         status.setText(filtered.size() + " channels • " + categories.size() + " provider categories • 50 channels per page");
@@ -689,6 +689,10 @@ public class MainActivity extends Activity {
     }
 
     private TextView addMediaRowReturningPlay(LinearLayout page, String name, String detail, String url, String logoUrl) {
+        return addMediaRowReturningPlay(page, name, detail, url, logoUrl, "");
+    }
+
+    private TextView addMediaRowReturningPlay(LinearLayout page, String name, String detail, String url, String logoUrl, String epgStreamId) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -763,12 +767,81 @@ public class MainActivity extends Activity {
             fav.setText(favourites.contains(name) ? "★" : "☆");
         });
 
+        if (epgStreamId != null && !epgStreamId.isEmpty()) {
+            TextView details = actionCard("DETAILS", false);
+            details.setTextSize(11);
+            LinearLayout.LayoutParams detailsParams = params(82, 42);
+            detailsParams.rightMargin = dp(6);
+            row.addView(details, detailsParams);
+            details.setOnClickListener(v -> loadProgrammeDetails(name, epgStreamId));
+        }
+
         TextView play = actionCard("▶  PLAY", true);
-        row.addView(play, params(105, 42));
+        row.addView(play, params(92, 42));
         play.setOnClickListener(v -> playDemo(name, url));
         row.setFocusable(false);
         row.setClickable(false);
         return play;
+    }
+
+    private void loadProgrammeDetails(String channelName, String streamId) {
+        showInfo("Programme details", "Loading programme information for " + channelName + "…");
+        playlistExecutor.execute(() -> {
+            String heading = null;
+            String problem = null;
+            StringBuilder details = new StringBuilder();
+            try {
+                String credentials = "?username=" + enc(providerUser) + "&password=" + enc(providerPass);
+                String address = providerServer + "/player_api.php" + credentials
+                    + "&action=get_short_epg&stream_id=" + enc(streamId) + "&limit=5";
+                JSONObject response = new JSONObject(httpGet(address));
+                JSONArray programmes = response.optJSONArray("epg_list");
+                if (programmes == null) programmes = response.optJSONArray("epg");
+                if (programmes == null || programmes.length() == 0) {
+                    problem = "Your provider did not return programme listings for this channel.";
+                } else {
+                    for (int i = 0; i < programmes.length(); i++) {
+                        JSONObject programme = programmes.optJSONObject(i);
+                        if (programme == null) continue;
+                        String programmeTitle = programme.optString("title", "Untitled programme");
+                        String description = programme.optString("description", "");
+                        if (description.isEmpty() || "null".equalsIgnoreCase(description)) {
+                            description = programme.optString("desc", "No description supplied.");
+                        }
+                        String start = epgTime(programme, "start", "start_timestamp");
+                        String end = epgTime(programme, "end", "stop_timestamp");
+                        if (details.length() > 0) details.append("\n\n");
+                        details.append(programmeTitle);
+                        if (!start.isEmpty() || !end.isEmpty()) {
+                            details.append("\n").append(start);
+                            if (!start.isEmpty() && !end.isEmpty()) details.append(" - ");
+                            details.append(end);
+                        }
+                        details.append("\n").append(description);
+                    }
+                    heading = channelName;
+                }
+            } catch (Exception e) {
+                problem = "Could not retrieve programme information: " + safeError(e);
+            }
+            final String dialogTitle = heading;
+            final String message = problem == null ? details.toString() : problem;
+            runOnUiThread(() -> new AlertDialog.Builder(MainActivity.this)
+                .setTitle(dialogTitle == null ? "Programme details" : dialogTitle)
+                .setMessage(message)
+                .setPositiveButton("CLOSE", null)
+                .show());
+        });
+    }
+
+    private String epgTime(JSONObject programme, String textField, String timestampField) {
+        String value = programme.optString(textField, "");
+        if (!value.isEmpty() && !"null".equalsIgnoreCase(value)) return value;
+        long timestamp = programme.optLong(timestampField, 0L);
+        if (timestamp <= 0L) return "";
+        if (timestamp < 100000000000L) timestamp *= 1000L;
+        return new java.text.SimpleDateFormat("EEE, MMM d • h:mm a", java.util.Locale.getDefault())
+            .format(new java.util.Date(timestamp));
     }
 
     private String channelInitials(String name) {
