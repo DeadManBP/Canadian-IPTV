@@ -634,19 +634,183 @@ public class MainActivity extends Activity {
     }
 
     private void showMovies() {
-        showCatalog("MOVIES", "Demo movie library", "Open sample videos published for player testing.",
-            new String[][] {
-                {"Big Buck Bunny", "Open movie playback sample", BBB},
-                {"Tears of Steel", "Open movie playback sample", TEARS}
-            });
+        loadProviderCatalog(false);
     }
 
     private void showSeries() {
-        showCatalog("SERIES", "Demo series", "Sample entries to test browsing. These are not a real TV catalogue.",
-            new String[][] {
-                {"Demo Series • Episode 1", "Playback sample • Big Buck Bunny", BBB},
-                {"Demo Series • Episode 2", "Playback sample • Tears of Steel", TEARS}
+        loadProviderCatalog(true);
+    }
+
+    private void loadProviderCatalog(boolean series) {
+        String section = series ? "SERIES" : "MOVIES";
+        LinearLayout root = createRoot(section);
+        LinearLayout page = pageContent(root);
+        addPageHeader(page, section, "Loading " + section.toLowerCase() + "…",
+            "Connecting to your IPTV provider catalogue.");
+        TextView status = text("Loading provider catalogue…", 15, MUTED, false);
+        LinearLayout.LayoutParams sp = params(-1, -2);
+        sp.topMargin = dp(18);
+        page.addView(status, sp);
+        setContentView(root);
+        playlistExecutor.execute(() -> {
+            ArrayList<String[]> items = new ArrayList<>();
+            String problem = null;
+            try {
+                String credentials = "?username=" + enc(providerUser) + "&password=" + enc(providerPass);
+                String action = series ? "get_series" : "get_vod_streams";
+                JSONArray list = new JSONArray(httpGet(providerServer + "/player_api.php" + credentials + "&action=" + action));
+                for (int i = 0; i < list.length(); i++) {
+                    JSONObject item = list.optJSONObject(i);
+                    if (item == null) continue;
+                    String id = item.optString(series ? "series_id" : "stream_id", "");
+                    if (id.isEmpty()) continue;
+                    String name = item.optString("name", series ? "Unnamed series" : "Unnamed movie");
+                    String category = item.optString("category_id", "");
+                    String logo = item.optString(series ? "cover" : "stream_icon", "");
+                    String ext = item.optString("container_extension", "mp4");
+                    if (ext.isEmpty() || "null".equalsIgnoreCase(ext)) ext = "mp4";
+                    String url = series ? id : providerServer + "/movie/" + pathPart(providerUser) + "/"
+                        + pathPart(providerPass) + "/" + id + "." + ext;
+                    items.add(new String[]{name, category, url, logo, ext});
+                }
+            } catch (Exception e) {
+                problem = safeError(e);
+            }
+            final String error = problem;
+            runOnUiThread(() -> {
+                if (isFinishing() || page.getParent() == null) return;
+                page.removeView(status);
+                if (error != null) {
+                    status.setText("Could not load " + section.toLowerCase() + ": " + error);
+                    page.addView(status, sp);
+                    return;
+                }
+                if (items.isEmpty()) {
+                    status.setText("Your provider returned no " + section.toLowerCase() + ".");
+                    page.addView(status, sp);
+                    return;
+                }
+                addPageHeader(page, section, series ? "Your series library" : "Your movie library",
+                    items.size() + " titles loaded from your provider.");
+                final int pageSize = 50;
+                final int[] current = {0};
+                LinearLayout rows = new LinearLayout(this);
+                rows.setOrientation(LinearLayout.VERTICAL);
+                page.addView(rows, params(-1, -2));
+                LinearLayout pager = new LinearLayout(this);
+                pager.setGravity(Gravity.CENTER_VERTICAL);
+                pager.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout.LayoutParams pp = params(-1, 48);
+                pp.topMargin = dp(14);
+                page.addView(pager, pp);
+                TextView previous = actionCard("◀  PREVIOUS", false);
+                TextView label = text("", 13, MUTED, true);
+                label.setGravity(Gravity.CENTER);
+                TextView next = actionCard("NEXT  ▶", true);
+                pager.addView(previous, params(150, 42));
+                pager.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+                pager.addView(next, params(150, 42));
+                Runnable render = new Runnable() {
+                    @Override public void run() {
+                        rows.removeAllViews();
+                        int totalPages = Math.max(1, (items.size() + pageSize - 1) / pageSize);
+                        current[0] = Math.max(0, Math.min(current[0], totalPages - 1));
+                        int from = current[0] * pageSize;
+                        int to = Math.min(items.size(), from + pageSize);
+                        for (int i = from; i < to; i++) {
+                            String[] item = items.get(i);
+                            String category = item[1].isEmpty() ? "Provider catalogue" : "Category ID: " + item[1];
+                            if (series) {
+                                TextView open = addMediaRowReturningPlay(rows, item[0], category, "", item[3]);
+                                open.setText("EPISODES");
+                                open.setOnClickListener(v -> loadSeriesEpisodes(item[0], item[2]));
+                            } else {
+                                addMediaRow(rows, item[0], category, item[2], item[3]);
+                            }
+                        }
+                        label.setText("Page " + (current[0] + 1) + " of " + totalPages);
+                        previous.setEnabled(current[0] > 0);
+                        previous.setAlpha(current[0] > 0 ? 1f : 0.45f);
+                        next.setEnabled(current[0] < totalPages - 1);
+                        next.setAlpha(current[0] < totalPages - 1 ? 1f : 0.45f);
+                    }
+                };
+                previous.setOnClickListener(v -> { current[0]--; render.run(); });
+                next.setOnClickListener(v -> { current[0]++; render.run(); });
+                render.run();
             });
+        });
+    }
+
+    private void loadSeriesEpisodes(String seriesName, String seriesId) {
+        showInfo("Series", "Loading seasons and episodes for " + seriesName + "…");
+        playlistExecutor.execute(() -> {
+            ArrayList<String> labels = new ArrayList<>();
+            ArrayList<String> urls = new ArrayList<>();
+            String problem = null;
+            try {
+                String credentials = "?username=" + enc(providerUser) + "&password=" + enc(providerPass);
+                JSONObject response = new JSONObject(httpGet(providerServer + "/player_api.php" + credentials
+                    + "&action=get_series_info&series_id=" + enc(seriesId)));
+                JSONObject episodes = response.optJSONObject("episodes");
+                if (episodes != null) {
+                    JSONArray seasons = response.optJSONArray("seasons");
+                    if (seasons != null) {
+                        for (int s = 0; s < seasons.length(); s++) {
+                            JSONObject season = seasons.optJSONObject(s);
+                            if (season == null) continue;
+                            String seasonNumber = season.optString("season_number", season.optString("name", String.valueOf(s + 1)));
+                            JSONArray list = episodes.optJSONArray(seasonNumber);
+                            if (list == null) continue;
+                            for (int e = 0; e < list.length(); e++) {
+                                JSONObject episode = list.optJSONObject(e);
+                                if (episode == null) continue;
+                                String id = episode.optString("id", "");
+                                if (id.isEmpty()) continue;
+                                String title = episode.optString("title", episode.optString("name", "Episode " + (e + 1)));
+                                String ext = episode.optString("container_extension", "mp4");
+                                if (ext.isEmpty() || "null".equalsIgnoreCase(ext)) ext = "mp4";
+                                labels.add("Season " + seasonNumber + " • " + title);
+                                urls.add(providerServer + "/series/" + pathPart(providerUser) + "/"
+                                    + pathPart(providerPass) + "/" + id + "." + ext);
+                            }
+                        }
+                    } else {
+                        java.util.Iterator<String> keys = episodes.keys();
+                        while (keys.hasNext()) {
+                            String seasonNumber = keys.next();
+                            JSONArray list = episodes.optJSONArray(seasonNumber);
+                            if (list == null) continue;
+                            for (int e = 0; e < list.length(); e++) {
+                                JSONObject episode = list.optJSONObject(e);
+                                if (episode == null) continue;
+                                String id = episode.optString("id", "");
+                                if (id.isEmpty()) continue;
+                                String ext = episode.optString("container_extension", "mp4");
+                                labels.add("Season " + seasonNumber + " • " + episode.optString("title", "Episode " + (e + 1)));
+                                urls.add(providerServer + "/series/" + pathPart(providerUser) + "/"
+                                    + pathPart(providerPass) + "/" + id + "." + ext);
+                            }
+                        }
+                    }
+                }
+                if (urls.isEmpty()) problem = "Your provider returned no playable episodes for this series.";
+            } catch (Exception e) {
+                problem = safeError(e);
+            }
+            final String error = problem;
+            runOnUiThread(() -> {
+                if (isFinishing()) return;
+                if (error != null) {
+                    showInfo(seriesName, error);
+                    return;
+                }
+                String[] choices = labels.toArray(new String[0]);
+                new AlertDialog.Builder(this).setTitle(seriesName).setItems(choices, (dialog, which) ->
+                    playDemo(labels.get(which), urls.get(which)))
+                    .setNegativeButton("CLOSE", null).show();
+            });
+        });
     }
 
     private void showFavourites() {
