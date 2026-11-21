@@ -645,8 +645,6 @@ public class MainActivity extends Activity {
         String section = series ? "SERIES" : "MOVIES";
         LinearLayout root = createRoot(section);
         LinearLayout page = pageContent(root);
-        addPageHeader(page, section, "Loading " + section.toLowerCase() + "…",
-            "Connecting to your IPTV provider catalogue.");
         TextView status = text("Loading provider catalogue…", 15, MUTED, false);
         LinearLayout.LayoutParams sp = params(-1, -2);
         sp.topMargin = dp(18);
@@ -743,7 +741,12 @@ public class MainActivity extends Activity {
     }
 
     private void loadSeriesEpisodes(String seriesName, String seriesId) {
-        showInfo("Series", "Loading seasons and episodes for " + seriesName + "…");
+        AlertDialog loading = new AlertDialog.Builder(this)
+            .setTitle("Series")
+            .setMessage("Loading seasons and episodes for " + seriesName + "…")
+            .setCancelable(false)
+            .create();
+        loading.show();
         playlistExecutor.execute(() -> {
             ArrayList<String> labels = new ArrayList<>();
             ArrayList<String> urls = new ArrayList<>();
@@ -801,6 +804,7 @@ public class MainActivity extends Activity {
             final String error = problem;
             runOnUiThread(() -> {
                 if (isFinishing()) return;
+                loading.dismiss();
                 if (error != null) {
                     showInfo(seriesName, error);
                     return;
