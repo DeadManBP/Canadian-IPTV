@@ -977,10 +977,10 @@ public class MainActivity extends Activity {
                     for (int i = 0; i < programmes.length(); i++) {
                         JSONObject programme = programmes.optJSONObject(i);
                         if (programme == null) continue;
-                        String programmeTitle = programme.optString("title", "Untitled programme");
-                        String description = programme.optString("description", "");
+                        String programmeTitle = decodeEpgText(programme.optString("title", "Untitled programme"));
+                        String description = decodeEpgText(programme.optString("description", ""));
                         if (description.isEmpty() || "null".equalsIgnoreCase(description)) {
-                            description = programme.optString("desc", "No description supplied.");
+                            description = decodeEpgText(programme.optString("desc", "No description supplied."));
                         }
                         String start = epgTime(programme, "start", "start_timestamp");
                         String end = epgTime(programme, "end", "stop_timestamp");
@@ -1015,6 +1015,23 @@ public class MainActivity extends Activity {
         });
     }
 
+    private String decodeEpgText(String value) {
+        if (value == null || value.isEmpty() || "null".equalsIgnoreCase(value)) return "";
+        String candidate = value.trim();
+        if (!candidate.matches("[A-Za-z0-9+/=_-]+") || candidate.length() < 8) return value;
+        try {
+            byte[] decoded = android.util.Base64.decode(candidate, android.util.Base64.DEFAULT);
+            String text = new String(decoded, java.nio.charset.StandardCharsets.UTF_8);
+            if (text.isEmpty()) return value;
+            for (int i = 0; i < text.length(); i++) {
+                char ch = text.charAt(i);
+                if (Character.isISOControl(ch) && ch != 10 && ch != 13 && ch != 9) return value;
+            }
+            return text;
+        } catch (Exception ignored) {
+            return value;
+        }
+    }
     private String epgTime(JSONObject programme, String textField, String timestampField) {
         String value = programme.optString(textField, "");
         if (!value.isEmpty() && !"null".equalsIgnoreCase(value)) return value;
