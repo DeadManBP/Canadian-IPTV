@@ -785,7 +785,12 @@ public class MainActivity extends Activity {
     }
 
     private void loadProgrammeDetails(String channelName, String streamId) {
-        showInfo("Programme details", "Loading programme information for " + channelName + "…");
+        AlertDialog loading = new AlertDialog.Builder(this)
+            .setTitle("Programme details")
+            .setMessage("Loading programme information for " + channelName + "…")
+            .setCancelable(false)
+            .create();
+        loading.show();
         playlistExecutor.execute(() -> {
             String heading = null;
             String problem = null;
@@ -797,8 +802,9 @@ public class MainActivity extends Activity {
                 JSONObject response = new JSONObject(httpGet(address));
                 JSONArray programmes = response.optJSONArray("epg_list");
                 if (programmes == null) programmes = response.optJSONArray("epg");
+                if (programmes == null) programmes = response.optJSONArray("epg_listings");
                 if (programmes == null || programmes.length() == 0) {
-                    problem = "Your provider did not return programme listings for this channel.";
+                    problem = "Your provider returned no EPG listings for this channel. The channel can still play normally, but programme information may not be included in your IPTV subscription.";
                 } else {
                     for (int i = 0; i < programmes.length(); i++) {
                         JSONObject programme = programmes.optJSONObject(i);
@@ -820,17 +826,24 @@ public class MainActivity extends Activity {
                         details.append("\n").append(description);
                     }
                     heading = channelName;
+                    if (details.length() == 0) {
+                        problem = "The provider returned EPG data, but it was in an unreadable format.";
+                    }
                 }
             } catch (Exception e) {
                 problem = "Could not retrieve programme information: " + safeError(e);
             }
             final String dialogTitle = heading;
             final String message = problem == null ? details.toString() : problem;
-            runOnUiThread(() -> new AlertDialog.Builder(MainActivity.this)
-                .setTitle(dialogTitle == null ? "Programme details" : dialogTitle)
-                .setMessage(message)
-                .setPositiveButton("CLOSE", null)
-                .show());
+            runOnUiThread(() -> {
+                if (isFinishing()) return;
+                loading.dismiss();
+                new AlertDialog.Builder(MainActivity.this)
+                    .setTitle(dialogTitle == null ? "Programme details" : dialogTitle)
+                    .setMessage(message)
+                    .setPositiveButton("CLOSE", null)
+                    .show();
+            });
         });
     }
 
