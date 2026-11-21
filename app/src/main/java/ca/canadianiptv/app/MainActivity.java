@@ -639,11 +639,19 @@ public class MainActivity extends Activity {
         LinearLayout root = createRoot("GUIDE");
         LinearLayout page = pageContent(root);
         addPageHeader(page, "TV GUIDE", "What's on now and next",
-            "Programme listings from your IPTV provider. Select WATCH to tune into a channel.");
+            "Filter the guide by your provider's channel categories.");
         TextView status = text("Loading channel guide…", 14, MUTED, false);
         LinearLayout.LayoutParams statusParams = params(-1, -2);
-        statusParams.topMargin = dp(12);
+        statusParams.topMargin = dp(10);
         page.addView(status, statusParams);
+        HorizontalScrollView filterScroll = new HorizontalScrollView(this);
+        filterScroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout filters = new LinearLayout(this);
+        filters.setOrientation(LinearLayout.HORIZONTAL);
+        filterScroll.addView(filters);
+        LinearLayout.LayoutParams filterParams = params(-1, 48);
+        filterParams.topMargin = dp(10);
+        page.addView(filterScroll, filterParams);
         LinearLayout headings = new LinearLayout(this);
         headings.setOrientation(LinearLayout.HORIZONTAL);
         headings.setPadding(dp(12), dp(10), dp(12), dp(10));
@@ -669,39 +677,54 @@ public class MainActivity extends Activity {
         pager.addView(next, params(150, 42));
         setContentView(root);
         playlistExecutor.execute(() -> {
-            ArrayList<String[]> channels = new ArrayList<>();
+            ArrayList<String[]> allChannels = new ArrayList<>();
+            LinkedHashMap<String, String> categoryNames = new LinkedHashMap<>();
             String problem = null;
             try {
                 String credentials = "?username=" + enc(providerUser) + "&password=" + enc(providerPass);
+                JSONArray categories = new JSONArray(httpGet(providerServer + "/player_api.php" + credentials + "&action=get_live_categories"));
+                for (int i = 0; i < categories.length(); i++) {
+                    JSONObject category = categories.optJSONObject(i);
+                    if (category == null) continue;
+                    String id = category.optString("category_id", "");
+                    if (!id.isEmpty()) categoryNames.put(id, category.optString("category_name", "Other"));
+                }
                 JSONArray list = new JSONArray(httpGet(providerServer + "/player_api.php" + credentials + "&action=get_live_streams"));
                 for (int i = 0; i < list.length(); i++) {
                     JSONObject item = list.optJSONObject(i);
                     if (item == null) continue;
                     String id = item.optString("stream_id", "");
                     if (id.isEmpty()) continue;
+                    String categoryId = item.optString("category_id", "");
                     String name = item.optString("name", "Unnamed channel");
                     String ext = item.optString("container_extension", "ts");
                     if (ext.isEmpty() || "null".equalsIgnoreCase(ext)) ext = "ts";
                     String url = providerServer + "/live/" + pathPart(providerUser) + "/" + pathPart(providerPass) + "/" + id + "." + ext;
-                    channels.add(new String[]{name, id, url, item.optString("stream_icon", "")});
+                    allChannels.add(new String[]{name, id, url, item.optString("stream_icon", ""), categoryId});
+                    if (!categoryId.isEmpty() && !categoryNames.containsKey(categoryId)) categoryNames.put(categoryId, "Other");
                 }
             } catch (Exception e) { problem = safeError(e); }
             final String error = problem;
             runOnUiThread(() -> {
                 if (isFinishing()) return;
-                status.setText(error == null ? channels.size() + " channels in your provider guide" : "Could not load guide: " + error);
-                if (error != null || channels.isEmpty()) return;
+                status.setText(error == null ? allChannels.size() + " channels in your provider guide" : "Could not load guide: " + error);
+                if (error != null || allChannels.isEmpty()) return;
                 final int pageSize = 25;
+                final String[] selectedCategory = {""};
                 final int[] currentPage = {0};
                 Runnable render = new Runnable() {
                     @Override public void run() {
+                        ArrayList<String[]> filtered = new ArrayList<>();
+                        for (String[] channel : allChannels) {
+                            if (selectedCategory[0].isEmpty() || selectedCategory[0].equals(channel[4])) filtered.add(channel);
+                        }
                         rows.removeAllViews();
-                        int totalPages = Math.max(1, (channels.size() + pageSize - 1) / pageSize);
+                        int totalPages = Math.max(1, (filtered.size() + pageSize - 1) / pageSize);
                         currentPage[0] = Math.max(0, Math.min(currentPage[0], totalPages - 1));
                         int from = currentPage[0] * pageSize;
-                        int to = Math.min(channels.size(), from + pageSize);
+                        int to = Math.min(filtered.size(), from + pageSize);
                         for (int i = from; i < to; i++) {
-                            String[] channel = channels.get(i);
+                            String[] channel = filtered.get(i);
                             LinearLayout row = new LinearLayout(MainActivity.this);
                             row.setOrientation(LinearLayout.HORIZONTAL);
                             row.setGravity(Gravity.CENTER_VERTICAL);
@@ -726,6 +749,7 @@ public class MainActivity extends Activity {
                             row.addView(upcoming, new LinearLayout.LayoutParams(0, -2, 1));
                             loadGuidePair(now, upcoming, channel[1]);
                         }
+                        status.setText(filtered.size() + " channels • " + allChannels.size() + " total");
                         pageLabel.setText("Page " + (currentPage[0] + 1) + " of " + totalPages);
                         previous.setEnabled(currentPage[0] > 0);
                         previous.setAlpha(currentPage[0] > 0 ? 1f : 0.45f);
@@ -733,6 +757,29 @@ public class MainActivity extends Activity {
                         next.setAlpha(currentPage[0] < totalPages - 1 ? 1f : 0.45f);
                     }
                 };
+                TextView all = actionCard("ALL CHANNELS", true);
+                all.setTextSize(11);
+                filters.addView(all, params(-2, 38));
+                all.setOnClickListener(v -> {
+                    selectedCategory[0] = "";
+                    currentPage[0] = 0;
+                    for (int j = 0; j < filters.getChildCount(); j++) filters.getChildAt(j).setBackground(round(j == 0 ? RED : PANEL_LIGHT, 9));
+                    render.run();
+                });
+                for (java.util.Map.Entry<String, String> entry : categoryNames.entrySet()) {
+                    String categoryId = entry.getKey();
+                    TextView chip = actionCard(entry.getValue(), false);
+                    chip.setTextSize(11);
+                    LinearLayout.LayoutParams chipParams = params(-2, 38);
+                    chipParams.leftMargin = dp(7);
+                    filters.addView(chip, chipParams);
+                    chip.setOnClickListener(v -> {
+                        selectedCategory[0] = categoryId;
+                        currentPage[0] = 0;
+                        for (int j = 0; j < filters.getChildCount(); j++) filters.getChildAt(j).setBackground(round(filters.getChildAt(j) == chip ? RED : PANEL_LIGHT, 9));
+                        render.run();
+                    });
+                }
                 previous.setOnClickListener(v -> { currentPage[0]--; render.run(); });
                 next.setOnClickListener(v -> { currentPage[0]++; render.run(); });
                 render.run();
