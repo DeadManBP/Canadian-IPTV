@@ -61,6 +61,7 @@ public class MainActivity extends Activity {
     private final Set<String> favourites = new LinkedHashSet<>();
     private final java.util.Map<String, String> favouriteUrls = new java.util.LinkedHashMap<>();
     private final ExecutorService imageExecutor = Executors.newFixedThreadPool(3);
+    private final ExecutorService epgExecutor = Executors.newFixedThreadPool(3);
     private String providerServer = "";
     private String providerUser = "";
     private String providerPass = "";
@@ -866,7 +867,7 @@ public class MainActivity extends Activity {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(16), dp(10), dp(12), dp(10));
         row.setBackground(round(PANEL, 12));
-        LinearLayout.LayoutParams rp = params(-1, 76);
+        LinearLayout.LayoutParams rp = params(-1, (epgStreamId != null && !epgStreamId.isEmpty()) ? 100 : 76);
         rp.topMargin = dp(10);
         page.addView(row, rp);
 
@@ -913,6 +914,13 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams subp = params(-1, -2);
         subp.topMargin = dp(4);
         info.addView(sub, subp);
+        if (epgStreamId != null && !epgStreamId.isEmpty()) {
+            TextView nowNext = text("NOW / NEXT: Loading guide…", 11, MUTED, false);
+            LinearLayout.LayoutParams ep = params(-1, -2);
+            ep.topMargin = dp(3);
+            info.addView(nowNext, ep);
+            loadNowNext(nowNext, epgStreamId);
+        }
 
         TextView fav = actionCard(favourites.contains(name) ? "★" : "☆", false);
         fav.setTextSize(23);
@@ -950,6 +958,37 @@ public class MainActivity extends Activity {
         row.setFocusable(false);
         row.setClickable(false);
         return play;
+    }
+
+    private void loadNowNext(TextView target, String streamId) {
+        target.setTag(streamId);
+        epgExecutor.execute(() -> {
+            String display;
+            try {
+                String credentials = "?username=" + enc(providerUser) + "&password=" + enc(providerPass);
+                String address = providerServer + "/player_api.php" + credentials
+                    + "&action=get_short_epg&stream_id=" + enc(streamId) + "&limit=2";
+                JSONObject response = new JSONObject(httpGet(address));
+                JSONArray programmes = response.optJSONArray("epg_list");
+                if (programmes == null) programmes = response.optJSONArray("epg");
+                if (programmes == null) programmes = response.optJSONArray("epg_listings");
+                if (programmes == null || programmes.length() == 0) {
+                    display = "NOW: Guide unavailable";
+                } else {
+                    JSONObject current = programmes.optJSONObject(0);
+                    JSONObject next = programmes.length() > 1 ? programmes.optJSONObject(1) : null;
+                    String currentTitle = current == null ? "Unavailable" : decodeEpgText(current.optString("title", "Programme information unavailable"));
+                    String nextTitle = next == null ? "Unavailable" : decodeEpgText(next.optString("title", "Programme information unavailable"));
+                    display = "NOW: " + currentTitle + "   •   NEXT: " + nextTitle;
+                }
+            } catch (Exception e) {
+                display = "NOW / NEXT: Guide unavailable";
+            }
+            final String result = display;
+            runOnUiThread(() -> {
+                if (!isFinishing() && streamId.equals(target.getTag())) target.setText(result);
+            });
+        });
     }
 
     private void loadProgrammeDetails(String channelName, String streamId) {
