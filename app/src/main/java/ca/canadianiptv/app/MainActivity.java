@@ -268,6 +268,65 @@ public class MainActivity extends Activity {
         } catch (Exception e) { return ""; }
     }
 
+
+    private static class ProviderChannelData {
+        final ArrayList<String[]> channels;
+        final LinkedHashMap<String, String> categories;
+        ProviderChannelData(ArrayList<String[]> channels, LinkedHashMap<String, String> categories) {
+            this.channels = channels;
+            this.categories = categories;
+        }
+    }
+
+    private ProviderChannelData providerChannelCache;
+    private String providerChannelCacheKey = "";
+    private long providerChannelCacheTime = 0L;
+
+    // Share one provider download between Live TV and TV Guide. Refresh after ten minutes.
+    private synchronized ProviderChannelData loadProviderChannelData() throws Exception {
+        String cacheKey = providerServer + "|" + providerUser + "|" + providerPass;
+        long now = System.currentTimeMillis();
+        if (providerChannelCache != null && cacheKey.equals(providerChannelCacheKey)
+                && now - providerChannelCacheTime < 10L * 60L * 1000L) {
+            return providerChannelCache;
+        }
+
+        LinkedHashMap<String, String> categories = new LinkedHashMap<>();
+        String credentials = "?username=" + enc(providerUser) + "&password=" + enc(providerPass);
+        try {
+            JSONArray categoryList = new JSONArray(httpGet(providerServer + "/player_api.php" + credentials + "&action=get_live_categories"));
+            for (int i = 0; i < categoryList.length(); i++) {
+                JSONObject category = categoryList.optJSONObject(i);
+                if (category == null) continue;
+                String id = category.optString("category_id", "");
+                if (!id.isEmpty()) categories.put(id, category.optString("category_name", "Other"));
+            }
+        } catch (Exception ignored) {
+            // Some providers omit category metadata; channels can still be shown.
+        }
+
+        JSONArray list = new JSONArray(httpGet(providerServer + "/player_api.php" + credentials + "&action=get_live_streams"));
+        ArrayList<String[]> channels = new ArrayList<>();
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject item = list.optJSONObject(i);
+            if (item == null) continue;
+            String id = item.optString("stream_id", "");
+            if (id.isEmpty()) continue;
+            String name = item.optString("name", "Unnamed channel");
+            String ext = item.optString("container_extension", "ts");
+            if (ext == null || ext.isEmpty() || "null".equalsIgnoreCase(ext)) ext = "ts";
+            String categoryId = item.optString("category_id", "");
+            if (!categoryId.isEmpty() && !categories.containsKey(categoryId)) categories.put(categoryId, "Other");
+            String url = providerServer + "/live/" + pathPart(providerUser) + "/" + pathPart(providerPass) + "/" + id + "." + ext;
+            channels.add(new String[]{name, categoryId, url, item.optString("stream_icon", ""), id});
+        }
+        channels.sort((a, b) -> naturalChannelCompare(a[0], b[0]));
+        providerChannelCache = new ProviderChannelData(channels, categories);
+        providerChannelCacheKey = cacheKey;
+        providerChannelCacheTime = now;
+        return providerChannelCache;
+    }
+
     private void showProviderLiveTv() {
         LinearLayout root = createRoot("LIVE TV");
         LinearLayout page = pageContent(root);
@@ -319,34 +378,12 @@ public class MainActivity extends Activity {
             java.util.LinkedHashMap<String, String> categories = new java.util.LinkedHashMap<>();
             String problem = null;
             try {
-                String credentials = "?username=" + enc(providerUser) + "&password=" + enc(providerPass);
-                try {
-                    JSONArray categoryList = new JSONArray(httpGet(providerServer + "/player_api.php" + credentials + "&action=get_live_categories"));
-                    for (int i = 0; i < categoryList.length(); i++) {
-                        JSONObject category = categoryList.optJSONObject(i);
-                        if (category == null) continue;
-                        String id = category.optString("category_id", "");
-                        String name = category.optString("category_name", "Other");
-                        if (!id.isEmpty()) categories.put(id, name);
-                    }
-                } catch (Exception ignored) {
-                    // Some providers do not expose category metadata. The all-channels view still works.
-                }
-
-                JSONArray list = new JSONArray(httpGet(providerServer + "/player_api.php" + credentials + "&action=get_live_streams"));
-                for (int i = 0; i < list.length(); i++) {
-                    JSONObject item = list.optJSONObject(i);
-                    if (item == null) continue;
-                    String id = item.optString("stream_id", "");
-                    if (id.isEmpty()) continue;
-                    String name = item.optString("name", "Unnamed channel");
-                    String ext = item.optString("container_extension", "ts");
-                    if (ext == null || ext.isEmpty() || "null".equalsIgnoreCase(ext)) ext = "ts";
-                    String logo = item.optString("stream_icon", "");
-                    String categoryId = item.optString("category_id", "");
+                ProviderChannelData data = loadProviderChannelData();
+                categories.putAll(data.categories);
+                for (String[] item : data.channels) {
+                    String categoryId = item[1];
                     String categoryName = categories.containsKey(categoryId) ? categories.get(categoryId) : "Other / Uncategorised";
-                    String stream = providerServer + "/live/" + pathPart(providerUser) + "/" + pathPart(providerPass) + "/" + id + "." + ext;
-                    channels.add(new String[]{name, categoryName, stream, logo, categoryId, id});
+                    channels.add(new String[]{item[0], categoryName, item[2], item[3], categoryId, item[4]});
                 }
             } catch (Exception e) { problem = safeError(e); }
 
@@ -684,26 +721,11 @@ public class MainActivity extends Activity {
             LinkedHashMap<String, String> categoryNames = new LinkedHashMap<>();
             String problem = null;
             try {
-                String credentials = "?username=" + enc(providerUser) + "&password=" + enc(providerPass);
-                JSONArray categories = new JSONArray(httpGet(providerServer + "/player_api.php" + credentials + "&action=get_live_categories"));
-                for (int i = 0; i < categories.length(); i++) {
-                    JSONObject category = categories.optJSONObject(i);
-                    if (category == null) continue;
-                    String id = category.optString("category_id", "");
-                    if (!id.isEmpty()) categoryNames.put(id, category.optString("category_name", "Other"));
-                }
-                JSONArray list = new JSONArray(httpGet(providerServer + "/player_api.php" + credentials + "&action=get_live_streams"));
-                for (int i = 0; i < list.length(); i++) {
-                    JSONObject item = list.optJSONObject(i);
-                    if (item == null) continue;
-                    String id = item.optString("stream_id", "");
-                    if (id.isEmpty()) continue;
-                    String categoryId = item.optString("category_id", "");
-                    String name = item.optString("name", "Unnamed channel");
-                    String ext = item.optString("container_extension", "ts");
-                    if (ext.isEmpty() || "null".equalsIgnoreCase(ext)) ext = "ts";
-                    String url = providerServer + "/live/" + pathPart(providerUser) + "/" + pathPart(providerPass) + "/" + id + "." + ext;
-                    allChannels.add(new String[]{name, id, url, item.optString("stream_icon", ""), categoryId});
+                ProviderChannelData data = loadProviderChannelData();
+                categoryNames.putAll(data.categories);
+                for (String[] item : data.channels) {
+                    String categoryId = item[1];
+                    allChannels.add(new String[]{item[0], item[4], item[2], item[3], categoryId});
                     if (!categoryId.isEmpty() && !categoryNames.containsKey(categoryId)) categoryNames.put(categoryId, "Other");
                 }
             } catch (Exception e) { problem = safeError(e); }
