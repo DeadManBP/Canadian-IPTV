@@ -350,6 +350,7 @@ public class MainActivity extends Activity {
                 }
             } catch (Exception e) { problem = safeError(e); }
 
+            if (problem == null) channels.sort((a, b) -> naturalChannelCompare(a[0], b[0]));
             final String error = problem;
             runOnUiThread(() -> {
                 if (page.getParent() == null) return;
@@ -504,7 +505,7 @@ public class MainActivity extends Activity {
         rail.addView(divider, divp);
         addRailItem(rail, "⌂   HOME", selected.equals("HOME"), this::showHome);
         addRailItem(rail, "▣   PROVIDER LOGIN", selected.equals("PROVIDER"), this::showProviderLogin);
-        addRailItem(rail, "▣   LIVE TV", selected.equals("LIVE TV"), this::showLiveTv);
+        addRailItem(rail, "▣   LIVE TV", selected.equals("LIVE TV"), this::openLiveTvTab);
         addRailItem(rail, "▦   TV GUIDE", selected.equals("GUIDE"), this::showTvGuide);
         addRailItem(rail, "▤   MOVIES", selected.equals("MOVIES"), this::showMovies);
         addRailItem(rail, "▥   SERIES", selected.equals("SERIES"), this::showSeries);
@@ -706,6 +707,7 @@ public class MainActivity extends Activity {
                     if (!categoryId.isEmpty() && !categoryNames.containsKey(categoryId)) categoryNames.put(categoryId, "Other");
                 }
             } catch (Exception e) { problem = safeError(e); }
+            if (problem == null) allChannels.sort((a, b) -> naturalChannelCompare(a[0], b[0]));
             final String error = problem;
             runOnUiThread(() -> {
                 if (isFinishing()) return;
@@ -1287,7 +1289,13 @@ public class MainActivity extends Activity {
 
         DefaultRenderersFactory renderers = new DefaultRenderersFactory(this)
             .setEnableDecoderFallback(true);
-        ExoPlayer player = new ExoPlayer.Builder(this, renderers).build();
+        androidx.media3.exoplayer.DefaultLoadControl loadControl =
+            new androidx.media3.exoplayer.DefaultLoadControl.Builder()
+                .setBufferDurationsMs(15000, 60000, 2500, 10000)
+                .build();
+        ExoPlayer player = new ExoPlayer.Builder(this, renderers)
+            .setLoadControl(loadControl)
+            .build();
         activePlayer = player;
         PlayerView playerView = new PlayerView(this);
         activePlayerView = playerView;
@@ -1358,6 +1366,47 @@ public class MainActivity extends Activity {
             return;
         }
         super.onBackPressed();
+    }
+
+    private void openLiveTvTab() {
+        if (!providerServer.isEmpty() && !providerUser.isEmpty() && !providerPass.isEmpty()) {
+            showProviderLiveTv();
+        } else {
+            showLiveTv();
+        }
+    }
+
+    private int naturalChannelCompare(String first, String second) {
+        String a = first == null ? "" : first.trim().toLowerCase(java.util.Locale.ROOT);
+        String b = second == null ? "" : second.trim().toLowerCase(java.util.Locale.ROOT);
+        boolean aNumeric = !a.isEmpty() && Character.isDigit(a.charAt(0));
+        boolean bNumeric = !b.isEmpty() && Character.isDigit(b.charAt(0));
+        if (aNumeric != bNumeric) return aNumeric ? -1 : 1;
+
+        int i = 0, j = 0;
+        while (i < a.length() && j < b.length()) {
+            boolean digitsA = Character.isDigit(a.charAt(i));
+            boolean digitsB = Character.isDigit(b.charAt(j));
+            int endA = i, endB = j;
+            while (endA < a.length() && Character.isDigit(a.charAt(endA)) == digitsA) endA++;
+            while (endB < b.length() && Character.isDigit(b.charAt(endB)) == digitsB) endB++;
+            String partA = a.substring(i, endA);
+            String partB = b.substring(j, endB);
+            int comparison;
+            if (digitsA && digitsB) {
+                String numberA = partA.replaceFirst("^0+(?!$)", "");
+                String numberB = partB.replaceFirst("^0+(?!$)", "");
+                comparison = Integer.compare(numberA.length(), numberB.length());
+                if (comparison == 0) comparison = numberA.compareTo(numberB);
+                if (comparison == 0) comparison = Integer.compare(partA.length(), partB.length());
+            } else {
+                comparison = partA.compareTo(partB);
+            }
+            if (comparison != 0) return comparison;
+            i = endA;
+            j = endB;
+        }
+        return Integer.compare(a.length(), b.length());
     }
 
     private void addRailItem(LinearLayout rail, String label, boolean selected, Runnable action) {
