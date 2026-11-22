@@ -59,7 +59,7 @@ public class MainActivity extends Activity {
     private final String TEARS = "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8";
     private final String LIVE_TEST = "https://demo.unified-streaming.com/k8s/live/stable/live.isml/.m3u8";
     private final String CANADA_PLAYLIST = "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8";
-    private final ExecutorService playlistExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService playlistExecutor = Executors.newFixedThreadPool(3);
     private final Set<String> favourites = new LinkedHashSet<>();
     private final java.util.Map<String, String> favouriteUrls = new java.util.LinkedHashMap<>();
     private final ExecutorService imageExecutor = Executors.newFixedThreadPool(3);
