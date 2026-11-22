@@ -1376,37 +1376,53 @@ public class MainActivity extends Activity {
         }
     }
 
+    private String channelSortKey(String value) {
+        String name = value == null ? "" : value.trim();
+        name = java.text.Normalizer.normalize(name, java.text.Normalizer.Form.NFKD)
+            .replaceAll("\\p{M}+", "")
+            .toLowerCase(java.util.Locale.ROOT);
+        // Ignore provider-added bullets, brackets, emoji and spacing before the actual name.
+        name = name.replaceFirst("^[^\\p{L}\\p{N}]+", "");
+        return name;
+    }
+
     private int naturalChannelCompare(String first, String second) {
-        String a = first == null ? "" : first.trim().toLowerCase(java.util.Locale.ROOT);
-        String b = second == null ? "" : second.trim().toLowerCase(java.util.Locale.ROOT);
+        String a = channelSortKey(first);
+        String b = channelSortKey(second);
         boolean aNumeric = !a.isEmpty() && Character.isDigit(a.charAt(0));
         boolean bNumeric = !b.isEmpty() && Character.isDigit(b.charAt(0));
         if (aNumeric != bNumeric) return aNumeric ? -1 : 1;
 
-        int i = 0, j = 0;
+        int i = 0;
+        int j = 0;
         while (i < a.length() && j < b.length()) {
-            boolean digitsA = Character.isDigit(a.charAt(i));
-            boolean digitsB = Character.isDigit(b.charAt(j));
-            int endA = i, endB = j;
-            while (endA < a.length() && Character.isDigit(a.charAt(endA)) == digitsA) endA++;
-            while (endB < b.length() && Character.isDigit(b.charAt(endB)) == digitsB) endB++;
-            String partA = a.substring(i, endA);
-            String partB = b.substring(j, endB);
-            int comparison;
-            if (digitsA && digitsB) {
-                String numberA = partA.replaceFirst("^0+(?!$)", "");
-                String numberB = partB.replaceFirst("^0+(?!$)", "");
-                comparison = Integer.compare(numberA.length(), numberB.length());
-                if (comparison == 0) comparison = numberA.compareTo(numberB);
-                if (comparison == 0) comparison = Integer.compare(partA.length(), partB.length());
-            } else {
-                comparison = partA.compareTo(partB);
+            char ca = a.charAt(i);
+            char cb = b.charAt(j);
+            if (Character.isDigit(ca) && Character.isDigit(cb)) {
+                int endA = i;
+                int endB = j;
+                while (endA < a.length() && Character.isDigit(a.charAt(endA))) endA++;
+                while (endB < b.length() && Character.isDigit(b.charAt(endB))) endB++;
+                int significantA = i;
+                int significantB = j;
+                while (significantA < endA - 1 && a.charAt(significantA) == '0') significantA++;
+                while (significantB < endB - 1 && b.charAt(significantB) == '0') significantB++;
+                int lengthA = endA - significantA;
+                int lengthB = endB - significantB;
+                if (lengthA != lengthB) return Integer.compare(lengthA, lengthB);
+                int numberCompare = a.substring(significantA, endA).compareTo(b.substring(significantB, endB));
+                if (numberCompare != 0) return numberCompare;
+                int zerosCompare = Integer.compare(endA - i, endB - j);
+                if (zerosCompare != 0) return zerosCompare;
+                i = endA;
+                j = endB;
+                continue;
             }
-            if (comparison != 0) return comparison;
-            i = endA;
-            j = endB;
+            if (ca != cb) return Character.compare(ca, cb);
+            i++;
+            j++;
         }
-        return Integer.compare(a.length(), b.length());
+        return Integer.compare(a.length() - i, b.length() - j);
     }
 
     private void addRailItem(LinearLayout rail, String label, boolean selected, Runnable action) {
